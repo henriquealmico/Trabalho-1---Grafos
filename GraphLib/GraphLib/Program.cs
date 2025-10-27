@@ -4,194 +4,192 @@ using GraphLibrary.Representations;
 
 public class Program {
     private const string BasePath = @"C:\Users\halmi\Downloads\Trabalho 1 - Grafos\TestCases";
-
-    public static void Main(string[] args) {
-        var filePathsP1 = new List<string>();
-        for (var i = 1; i <= 6; i++) {
-            var path = Path.Combine(BasePath, $"grafo_{i}.txt");
-            if (File.Exists(path)) filePathsP1.Add(path);
-        }
+    private const int MaxGraphFiles = 1;
+    private const int BfsRunCount = 100;
+    private const int DijkstraRunCount = 100;
+    
+    private static class FeatureToggles {
+        // PART 1 - Unweighted Graphs
+        public const bool RunPart1 = false;
+        public const bool RunPart1AdjacencyList = false;
+        public const bool RunPart1AdjacencyMatrix = false;
         
-        var graphFilesP2 = new List<string>(); 
-        for (var i = 1; i <= 6; i++) {
-            var path = Path.Combine(BasePath, $"grafo_W_{i}.txt");
-            if (File.Exists(path)) graphFilesP2.Add(path);
-        }
-        
-        Console.WriteLine(new string('#', 80));
-        Console.WriteLine("### INICIANDO ESTUDOS DE CASO - PARTE 1 (Grafos Não Ponderados)");
-        Console.WriteLine(new string('#', 80));
-        
-        Console.WriteLine("\n--- PARTE 1: ADJACENCY LIST ---");
-        foreach (var filePath in filePathsP1) RunPart1Studies(filePath, v => new AdjacencyList(v));
-        
-        Console.WriteLine("\n--- PARTE 1: ADJACENCY MATRIX ---");
-        foreach (var filePath in filePathsP1) RunPart1Studies(filePath, v => new AdjacencyMatrix(v));
-
-        Console.WriteLine("\n\n" + new string('#', 80));
-        Console.WriteLine("### INICIANDO ESTUDOS DE CASO - PARTE 2 (Grafos Ponderados)");
-        Console.WriteLine(new string('#', 80));
-        
-        foreach (var filePath in graphFilesP2) RunPart2Studies(filePath);
-        
-        RunCollaborationNetworkStudy();
-        
-        Console.WriteLine("\n\n" + new string('#', 80));
-        Console.WriteLine("### Todas as análises concluídas.");
-        Console.WriteLine(new string('#', 80));
+        // PART 2 - Weighted Graphs
+        public const bool RunPart2 = true;
+        public const bool RunPart2WeightedGraphs = true;
+        public const bool RunPart2CollaborationNetwork = true;
     }
 
-    public static void RunPart1Studies(string filePath, Func<int, IGraphRepresentation> representationFactory) {
-        var repType = representationFactory(1).GetType().Name;
-        Console.WriteLine($"\n{new string('=', 80)}\nANALISANDO (P1): {Path.GetFileName(filePath)} | Usando: {repType}");
-        try {
-            GC.Collect();
-            var memoryBefore = GC.GetTotalMemory(true);
-            var graph = Graph.FromFileUnweighted(filePath, representationFactory);
-            var memoryAfter = GC.GetTotalMemory(true);
+    public static void Main() {
+        PrintHeader();
+        
+        if (FeatureToggles.RunPart1)
+            RunUnweightedGraphs();
 
-            RunCaseStudiesPart1(graph, repType, memoryAfter - memoryBefore);
+        if (FeatureToggles.RunPart2)
+            RunWeightedGraphs();
+        
+        PrintFooter();
+    }
+
+    // ========================= MAIN TEST RUNNERS =========================
+    
+    private static void RunUnweightedGraphs() {
+        var files = GetGraphFiles("grafo_{0}.txt");
+        
+        PrintSectionHeader("PARTE 1 - GRAFOS NÃO PONDERADOS");
+        
+        if (FeatureToggles.RunPart1AdjacencyList) {
+            Console.WriteLine("\n--- ADJACENCY LIST ---");
+            foreach (var file in files) {
+                RunPart1Studies(file, v => new AdjacencyList(v));
+            }
+        }
+        
+        if (FeatureToggles.RunPart1AdjacencyMatrix) {
+            Console.WriteLine("\n--- ADJACENCY MATRIX ---");
+            foreach (var file in files) {
+                RunPart1Studies(file, v => new AdjacencyMatrix(v));
+            }
+        }
+    }
+
+    private static void RunWeightedGraphs() {
+        PrintSectionHeader("PARTE 2 - GRAFOS PONDERADOS");
+        
+        if (FeatureToggles.RunPart2WeightedGraphs) {
+            var files = GetGraphFiles("grafo_W_{0}.txt");
+            foreach (var file in files) 
+                RunPart2Studies(file);
+        }
+        
+        if (FeatureToggles.RunPart2CollaborationNetwork)
+            RunCollaborationNetworkStudy();
+    }
+
+    // ========================= PART 1 TESTS =========================
+
+    private static void RunPart1Studies(string filePath, Func<int, IGraphRepresentation> representationFactory) {
+        var repType = representationFactory(1).GetType().Name;
+        PrintFileHeader(filePath, repType, "P1");
+        
+        try {
+            var (graph, memoryUsed) = LoadGraphWithMemoryTracking(
+                filePath, 
+                representationFactory, 
+                Graph.FromFileUnweighted
+            );
+            
+            ExecutePart1Tests(graph, repType, memoryUsed);
         }
         catch (OutOfMemoryException) {
-            Console.WriteLine($"\n--- FALHA (P1) ---");
-            Console.WriteLine("      [REASON] OutOfMemoryException: O grafo é muito grande para esta representação.");
+            PrintError("OutOfMemoryException: O grafo é muito grande para esta representação.");
         }
         catch (Exception ex) {
-            Console.WriteLine($"\n[ERRO (P1)] Falha ao processar o arquivo {filePath}. Razão: {ex.Message}");
+            PrintError($"Falha ao processar: {ex.Message}");
         }
     }
 
-    public static void RunCaseStudiesPart1(Graph graph, string representationType, long memoryBytes) {
-        Console.WriteLine($"\n--- Resultados (Parte 1) para: {representationType} ---");
+    private static void ExecutePart1Tests(Graph graph, string representationType, long memoryBytes) {
+        Console.WriteLine($"\n--- Resultados para: {representationType} ---");
         
-        Console.WriteLine($"[1] Memory Usage: {memoryBytes / (1024.0 * 1024.0):F3} MB");
-        Console.WriteLine("[2] BFS Average Time (100 runs): " + TimeSearchAlgorithm(graph, graph.BreadthFirstSearch, 100));
-        Console.WriteLine("[3] DFS Average Time (100 runs): " + TimeSearchAlgorithm(graph, graph.DepthFirstSearch, 100));
+        // Test 1: Memory Usage
+        PrintTestResult("Memory Usage", $"{memoryBytes / (1024.0 * 1024.0):F3} MB");
+        
+        // Test 2 & 3: Algorithm Performance
+        var bfsTime = MeasureSearchAlgorithm(graph, graph.BreadthFirstSearch, BfsRunCount);
+        var dfsTime = MeasureSearchAlgorithm(graph, graph.DepthFirstSearch, BfsRunCount);
+        PrintTestResult($"BFS Average Time ({BfsRunCount} runs)", bfsTime);
+        PrintTestResult($"DFS Average Time ({BfsRunCount} runs)", dfsTime);
 
-        var verticesToTest = new[] { 10, 20, 30 };
-        var startVertices = new[] { 1, 2, 3 };
+        // Test 4: Parent Vertices
+        TestParentVertices(graph);
         
-        Console.WriteLine("[4] Parent Vertices:");
-        foreach (var startNode in startVertices) {
-            if (startNode > graph.VertexCount) continue;
-            var (parentsBfs, _) = graph.BreadthFirstSearch(startNode);
-            var (parentsDfs, _) = graph.DepthFirstSearch(startNode);
-            foreach (var targetNode in verticesToTest) {
-                if (targetNode > graph.VertexCount) continue;
-                var bfsParent = parentsBfs.GetValueOrDefault(targetNode)?.ToString() ?? "N/A";
-                var dfsParent = parentsDfs.GetValueOrDefault(targetNode)?.ToString() ?? "N/A";
-                Console.WriteLine($"    - Start {startNode} -> Target {targetNode}: BFS Parent={bfsParent}, DFS Parent={dfsParent}");
-            }
-        }
-        
-        var pairsToTest = new[] { (10, 20), (10, 30), (20, 30) };
-        Console.WriteLine("[5] Distances between pairs (unweighted):");
-        foreach (var pair in pairsToTest) {
-            if (pair.Item1 > graph.VertexCount || pair.Item2 > graph.VertexCount) continue;
-            var distance = graph.GetDistance(pair.Item1, pair.Item2);
-            Console.WriteLine($"    - Distance({pair.Item1}, {pair.Item2}): {(distance == -1 ? "Unreachable" : distance)}");
-        }
+        // Test 5: Distances
+        TestDistances(graph);
 
-        Console.WriteLine("[6] Connected Components:");
-        var components = graph.GetConnectedComponents();
-        if (components.Count != 0) {
-            Console.WriteLine($"    - Number of components: {components.Count}");
-            Console.WriteLine($"    - Largest component size: {components.First().Count}");
-            Console.WriteLine($"    - Smallest component size: {components.Last().Count}");
-        }
+        // Test 6: Connected Components
+        TestConnectedComponents(graph);
         
-        Console.WriteLine("[7] Diameter (unweighted):");
-        var stopwatch = Stopwatch.StartNew();
-        var approxDiameter = graph.GetApproximateDiameter();
-        stopwatch.Stop();
-        Console.WriteLine($"    - Approximate Diameter: {approxDiameter} (took {stopwatch.ElapsedMilliseconds} ms)");
-    }
-    
-    private static string TimeSearchAlgorithm(Graph graph, Action<int, Dictionary<int, int?>, Dictionary<int, int>> searchFunc, int runs) {
-        if (graph.VertexCount == 0) return "N/A (empty graph)";
-        var parents = new Dictionary<int, int?>(graph.VertexCount);
-        var levels = new Dictionary<int, int>(graph.VertexCount);
-        var random = new Random();
-        var totalTime = TimeSpan.Zero;
-        var stopwatch = new Stopwatch();
-        for (var i = 0; i < runs; i++) {
-            var startVertex = random.Next(1, graph.VertexCount + 1);
-            stopwatch.Restart();
-            searchFunc(startVertex, parents, levels);
-            stopwatch.Stop();
-            totalTime += stopwatch.Elapsed;
-        }
-        return $"{totalTime.TotalMilliseconds / runs:F4} ms";
+        // Test 7: Diameter
+        TestDiameter(graph);
     }
 
-    public static void RunPart2Studies(string filePath) {
-        Console.WriteLine($"\n{new string('=', 80)}\nANALISANDO (P2): {Path.GetFileName(filePath)} | Usando: AdjacencyList");
-        Graph graph;
+    // ========================= PART 2 TESTS =========================
+
+    private static void RunPart2Studies(string filePath) {
+        PrintFileHeader(filePath, "AdjacencyList", "P2");
+        
         try {
-            graph = Graph.FromFileWeighted(filePath, v => new AdjacencyList(v));
+            var graph = Graph.FromFileWeighted(filePath, v => new AdjacencyList(v));
+            
             if (graph.HasNegativeWeights) {
-                Console.WriteLine("[AVISO] O grafo contém pesos negativos. O algoritmo de Dijkstra será pulado.");
+                Console.WriteLine("[AVISO] Grafo com pesos negativos. Dijkstra não será executado.");
                 return;
             }
+
+            ExecuteDijkstraTests(graph);
         }
         catch (Exception ex) {
-            Console.WriteLine($"\n[ERRO (P2)] Falha ao carregar o grafo {filePath}. Razão: {ex.Message}");
-            return;
+            PrintError($"Falha ao carregar: {ex.Message}");
         }
+    }
 
-        Console.WriteLine("\n[P2 - Estudo 3.1: Distâncias e Caminhos Mínimos]");
+    private static void ExecuteDijkstraTests(Graph graph) {
         const int startVertex = 10;
-        var verticesToFind = new[] { 20, 30, 40, 50, 60 };
+        var targetVertices = new[] { 20, 30, 40, 50, 60 };
+        
+        Console.WriteLine("\n[Estudo 3.1: Distâncias e Caminhos Mínimos]");
         var (distances, parents) = graph.Dijkstra(startVertex, useHeap: true);
         
-        Console.WriteLine($"| Vértice Inicial | Vértice Final | Distância (Peso) | Caminho Mínimo (exemplos) |");
-        Console.WriteLine($"|:--- |:--- |:--- |:--- |");
-        foreach (var endVertex in verticesToFind) {
-            if (endVertex > graph.VertexCount) continue;
+        Console.WriteLine("| Vértice Inicial | Vértice Final | Distância | Caminho Mínimo |");
+        Console.WriteLine(new string('-', 70));
+        
+        foreach (var endVertex in targetVertices.Where(v => v <= graph.VertexCount)) {
             var dist = distances.GetValueOrDefault(endVertex, double.PositiveInfinity);
             var distStr = double.IsPositiveInfinity(dist) ? "Inalcançável" : $"{dist:F2}";
             var path = ReconstructPath(startVertex, endVertex, parents);
-            var pathStr = path.Any() ? string.Join(" -> ", path.Take(5)) + (path.Count > 5 ? "..." : "") : "N/A";
-            Console.WriteLine($"| {startVertex, -15} | {endVertex, -13} | {distStr, -16} | {pathStr,-25} |");
+            var pathStr = FormatPath(path);
+            
+            Console.WriteLine($"| {startVertex,-15} | {endVertex,-13} | {distStr,-9} | {pathStr,-22} |");
         }
 
-        Console.WriteLine("\n[P2 - Estudo 3.2: Tempo de Execução Dijkstra (k=100)]");
-        var k = 100;
-        var timeArray = TimeDijkstra(graph, useHeap: false, k);
-        var timeHeap = TimeDijkstra(graph, useHeap: true, k);
-        Console.WriteLine($"| Implementação | Tempo Médio (k={k}) |");
-        Console.WriteLine($"|:--- |:--- |");
-        Console.WriteLine($"| Dijkstra com Vetor (O(V^2)) | {timeArray, -18} |");
-        Console.WriteLine($"| Dijkstra com Heap (O((E+V)logV)) | {timeHeap, -18} |");
+        Console.WriteLine($"\n[Estudo 3.2: Tempo de Execução Dijkstra (k={DijkstraRunCount})]");
+        var timeArray = MeasureDijkstra(graph, useHeap: false, DijkstraRunCount);
+        var timeHeap = MeasureDijkstra(graph, useHeap: true, DijkstraRunCount);
+        
+        Console.WriteLine("| Implementação | Tempo Médio |");
+        Console.WriteLine(new string('-', 50));
+        Console.WriteLine($"| Dijkstra com Vetor (O(V²)) | {timeArray,-18} |");
+        Console.WriteLine($"| Dijkstra com Heap (O((E+V)logV)) | {timeHeap,-18} |");
     }
 
     private static void RunCollaborationNetworkStudy() {
         Console.WriteLine($"\n{new string('=', 80)}\nANALISANDO (P2): Rede de Colaboração");
-        var graphFile = Path.Combine(BasePath, "collab_graph.txt");
-        var namesFile = Path.Combine(BasePath, "collab_names.txt");
+        var graphFile = Path.Combine(BasePath, "rede_colaboracao.txt");
+        var namesFile = Path.Combine(BasePath, "rede_colaboracao_vertices.txt");
         if (!File.Exists(graphFile) || !File.Exists(namesFile)) {
-            Console.WriteLine("[AVISO] Arquivos 'collab_graph.txt' ou 'collab_names.txt' não encontrados. Pulando estudo.");
+            Console.WriteLine("[AVISO] Arquivos 'rede_colaboracao.txt' ou 'rede_colaboracao_vertices.txt' não encontrados. Pulando estudo.");
             return;
         }
         try {
             var graph = Graph.FromFileWeighted(graphFile, v => new AdjacencyList(v));
             graph.LoadVertexNames(namesFile);
             
-            var startName = "Edsger W. Dijkstra";
-            var targetNames = new[] { "Alan M. Turing", "J. B. Kruskal", "Jon M. Kleinberg", "Eva Tardos", "Daniel R. Figueiredo" };
+            const string startName = "Edsger W. Dijkstra";
+            var targetNames = new[] { "Alan M. Turing", "J. B. Kruskal", "Jon M. Kleinberg", "Éva Tardos", "Daniel R. Figueiredo" };
             var startId = graph.GetVertexId(startName);
             var (distances, parents) = graph.Dijkstra(startId, useHeap: true);
 
             Console.WriteLine($"\nResultados do Caminho Mínimo a partir de '{startName}':");
             Console.WriteLine($"| Pesquisador Destino | Distância (Proximidade) | Caminho (exemplo) |");
-            Console.WriteLine($"|:--- |:--- |:--- |");
             foreach (var targetName in targetNames) {
                 var endId = graph.GetVertexId(targetName);
                 var dist = distances.GetValueOrDefault(endId, double.PositiveInfinity);
                 var distStr = double.IsPositiveInfinity(dist) ? "Inalcançável" : $"{dist:F4}";
                 var pathIds = ReconstructPath(startId, endId, parents);
                 var pathNames = pathIds.Select(id => graph.GetVertexName(id));
-                var pathStr = pathIds.Any() ? string.Join(" -> ", pathNames.Take(4)) + "..." : "N/A";
+                var pathStr = pathIds.Count != 0 ? string.Join(" -> ", pathNames.Take(4)) + "..." : "N/A";
                 Console.WriteLine($"| {targetName,-20} | {distStr,-23} | {pathStr,-17} |");
             }
         }
@@ -200,34 +198,192 @@ public class Program {
         }
     }
 
-    private static string TimeDijkstra(Graph graph, bool useHeap, int k) {
+    // ========================= TEST HELPERS =========================
+
+    private static void TestParentVertices(Graph graph) {
+        Console.WriteLine("[4] Parent Vertices:");
+        var startVertices = new[] { 1, 2, 3 };
+        var targetVertices = new[] { 10, 20, 30 };
+        
+        foreach (var start in startVertices.Where(v => v <= graph.VertexCount)) {
+            var (parentsBfs, _) = graph.BreadthFirstSearch(start);
+            var (parentsDfs, _) = graph.DepthFirstSearch(start);
+            
+            foreach (var target in targetVertices.Where(v => v <= graph.VertexCount)) {
+                var bfsParent = parentsBfs.GetValueOrDefault(target)?.ToString() ?? "N/A";
+                var dfsParent = parentsDfs.GetValueOrDefault(target)?.ToString() ?? "N/A";
+                Console.WriteLine($"    Start {start} → Target {target}: BFS={bfsParent}, DFS={dfsParent}");
+            }
+        }
+    }
+
+    private static void TestDistances(Graph graph) {
+        Console.WriteLine("[5] Distances:");
+        var pairs = new[] { (10, 20), (10, 30), (20, 30) };
+        
+        foreach (var (u, v) in pairs.Where(p => p.Item1 <= graph.VertexCount && p.Item2 <= graph.VertexCount)) {
+            var distance = graph.GetDistance(u, v);
+            var distStr = distance == -1 ? "Unreachable" : distance.ToString();
+            Console.WriteLine($"    Distance({u}, {v}): {distStr}");
+        }
+    }
+
+    private static void TestConnectedComponents(Graph graph) {
+        Console.WriteLine("[6] Connected Components:");
+        var components = graph.GetConnectedComponents();
+        
+        if (components.Count > 0) {
+            Console.WriteLine($"    Count: {components.Count}");
+            Console.WriteLine($"    Largest: {components.First().Count} vertices");
+            Console.WriteLine($"    Smallest: {components.Last().Count} vertices");
+        } else {
+            Console.WriteLine("    No components found");
+        }
+    }
+
+    private static void TestDiameter(Graph graph) {
+        Console.WriteLine("[7] Diameter:");
+        var stopwatch = Stopwatch.StartNew();
+        var diameter = graph.GetApproximateDiameter();
+        stopwatch.Stop();
+        Console.WriteLine($"    Approximate: {diameter} (took {stopwatch.ElapsedMilliseconds} ms)");
+    }
+
+    // ========================= PERFORMANCE MEASUREMENTS =========================
+
+    private static string MeasureSearchAlgorithm(
+        Graph graph, 
+        Action<int, Dictionary<int, int?>, Dictionary<int, int>> searchFunc, 
+        int runs) {
+        
         if (graph.VertexCount == 0) return "N/A";
-        var random = new Random();
-        var totalTime = TimeSpan.Zero;
+        
+        var parents = new Dictionary<int, int?>(graph.VertexCount);
+        var levels = new Dictionary<int, int>(graph.VertexCount);
+        var random = new Random(42);
         var stopwatch = new Stopwatch();
-        for (var i = 0; i < k; i++) {
+        var totalTicks = 0L;
+        
+        for (var i = 0; i < runs; i++) {
+            var startVertex = random.Next(1, graph.VertexCount + 1);
+            stopwatch.Restart();
+            searchFunc(startVertex, parents, levels);
+            stopwatch.Stop();
+            totalTicks += stopwatch.ElapsedTicks;
+        }
+        
+        var avgMilliseconds = (totalTicks * 1000.0 / Stopwatch.Frequency) / runs;
+        return $"{avgMilliseconds:F4} ms";
+    }
+
+    private static string MeasureDijkstra(Graph graph, bool useHeap, int runs) {
+        if (graph.VertexCount == 0) return "N/A";
+        
+        var random = new Random(42);
+        var stopwatch = new Stopwatch();
+        var totalTicks = 0L;
+        
+        for (var i = 0; i < runs; i++) {
             var startVertex = random.Next(1, graph.VertexCount + 1);
             stopwatch.Restart();
             graph.Dijkstra(startVertex, useHeap);
             stopwatch.Stop();
-            totalTime += stopwatch.Elapsed;
+            totalTicks += stopwatch.ElapsedTicks;
         }
-        return $"{(totalTime.TotalMilliseconds / k):F4} ms";
+        
+        var avgMilliseconds = (totalTicks * 1000.0 / Stopwatch.Frequency) / runs;
+        return $"{avgMilliseconds:F4} ms";
+    }
+
+    // ========================= UTILITY METHODS =========================
+
+    private static List<string> GetGraphFiles(string pattern) {
+        var files = new List<string>();
+        for (var i = 1; i <= MaxGraphFiles; i++) {
+            var path = Path.Combine(BasePath, string.Format(pattern, i));
+            if (File.Exists(path))
+                files.Add(path);
+        }
+        return files;
+    }
+
+    private static (Graph graph, long memoryUsed) LoadGraphWithMemoryTracking(
+        string filePath,
+        Func<int, IGraphRepresentation> representationFactory,
+        Func<string, Func<int, IGraphRepresentation>, Graph> loadFunction) {
+        
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        
+        var memoryBefore = GC.GetTotalMemory(true);
+        var graph = loadFunction(filePath, representationFactory);
+        var memoryAfter = GC.GetTotalMemory(true);
+        
+        return (graph, memoryAfter - memoryBefore);
     }
 
     private static List<int> ReconstructPath(int start, int end, Dictionary<int, int?> parents) {
         var path = new List<int>();
         int? current = end;
+        
         while (current.HasValue && parents.ContainsKey(current.Value)) {
             path.Add(current.Value);
             if (current.Value == start) break;
             current = parents[current.Value];
         }
-        if (current.HasValue && current.Value == start) {
-            if (path.Last() != start) path.Add(start);
-            path.Reverse();
-            return path;
-        }
-        return [];
+
+        if (current != start) return [];
+        
+        if (path.Count > 0 && path[^1] != start) 
+            path.Add(start);
+        
+        path.Reverse();
+        return path;
+    }
+
+    private static string FormatPath(List<int> path, int maxDisplay = 5) {
+        if (path.Count == 0) return "N/A";
+        
+        var display = path.Take(maxDisplay).Select(v => v.ToString());
+        var pathStr = string.Join(" → ", display);
+        
+        return path.Count > maxDisplay ? $"{pathStr}..." : pathStr;
+    }
+
+    // ========================= FORMATTING HELPERS =========================
+
+    private static void PrintHeader() {
+        Console.WriteLine(new string('#', 80));
+        Console.WriteLine("### GRAPH ANALYSIS TEST SUITE");
+        Console.WriteLine($"### Part 1 (Unweighted): {(FeatureToggles.RunPart1 ? "ENABLED" : "DISABLED")}");
+        Console.WriteLine($"### Part 2 (Weighted): {(FeatureToggles.RunPart2 ? "ENABLED" : "DISABLED")}");
+        Console.WriteLine(new string('#', 80));
+    }
+
+    private static void PrintFooter() {
+        Console.WriteLine("\n" + new string('#', 80));
+        Console.WriteLine("### ANÁLISES CONCLUÍDAS");
+        Console.WriteLine(new string('#', 80));
+    }
+
+    private static void PrintSectionHeader(string title) {
+        Console.WriteLine("\n" + new string('#', 80));
+        Console.WriteLine($"### {title}");
+        Console.WriteLine(new string('#', 80));
+    }
+
+    private static void PrintFileHeader(string filePath, string representation, string part) {
+        Console.WriteLine($"\n{new string('=', 80)}");
+        Console.WriteLine($"[{part}] {Path.GetFileName(filePath)} | {representation}");
+        Console.WriteLine(new string('=', 80));
+    }
+
+    private static void PrintTestResult(string testName, string result) {
+        Console.WriteLine($"[{testName}]: {result}");
+    }
+
+    private static void PrintError(string message) {
+        Console.WriteLine($"\n[ERRO] {message}");
     }
 }
