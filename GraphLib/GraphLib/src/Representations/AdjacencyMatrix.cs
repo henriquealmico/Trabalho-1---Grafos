@@ -4,7 +4,9 @@ namespace GraphLibrary.Representations
 {
     public class AdjacencyMatrix : IGraphRepresentation
     {
-        private readonly byte[,] _matrix;
+        // Alterado de byte[,] para double[,] para armazenar pesos reais [cite: 83]
+        private readonly double[,] _matrix;
+        private const double NoEdge = double.PositiveInfinity;
 
         public int VertexCount { get; }
         public int EdgeCount { get; private set; }
@@ -13,28 +15,40 @@ namespace GraphLibrary.Representations
         {
             VertexCount = vertexCount;
             EdgeCount = 0;
-            _matrix = new byte[vertexCount, vertexCount];
-        }
-
-        public void AddEdge(int u, int v)
-        {
-            var uIdx = u - 1;
-            var vIdx = v - 1;
-
-            if (_matrix[uIdx, vIdx] != 0) return;
-            _matrix[uIdx, vIdx] = 1;
-            _matrix[vIdx, uIdx] = 1;
-            EdgeCount++;
-        }
-
-        public IEnumerable<int> GetNeighbors(int v)
-        {
-            var vIdx = v - 1;
-            for (var i = 0; i < VertexCount; i++)
+            _matrix = new double[vertexCount, vertexCount];
+            // Inicializa a matriz com "Infinito" para marcar a ausência de arestas
+            for (int i = 0; i < vertexCount; i++)
             {
-                if (_matrix[vIdx, i] == 1)
+                for (int j = 0; j < vertexCount; j++)
                 {
-                    yield return i + 1;
+                    _matrix[i, j] = NoEdge;
+                }
+            }
+        }
+
+        public void AddEdge(int u, int v, double weight)
+        {
+            int uIdx = u - 1;
+            int vIdx = v - 1;
+
+            if (_matrix[uIdx, vIdx] == NoEdge)
+            {
+                EdgeCount++;
+            }
+            _matrix[uIdx, vIdx] = weight;
+            _matrix[vIdx, uIdx] = weight;
+        }
+
+        public IEnumerable<(int vertex, double weight)> GetNeighbors(int v)
+        {
+            int vIdx = v - 1;
+            for (int i = 0; i < VertexCount; i++)
+            {
+                double weight = _matrix[vIdx, i];
+                if (weight != NoEdge)
+                {
+                    // Retorna o vizinho (i+1) e o peso da aresta
+                    yield return (i + 1, weight);
                 }
             }
         }

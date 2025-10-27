@@ -3,179 +3,189 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using GraphLib;
 using GraphLibrary;
 using GraphLibrary.Representations;
 
 public class Program
 {
-    private const string basePath = "C:/Users/halmi/Downloads/Trabalho 1 - Grafos/test_cases/";
+    // IMPORTANTE: Atualize este caminho para a pasta com seus arquivos de grafo
+    private const string basePath = "C:\\Users\\Augusto\\Documents\\GitHub";
 
     public static void Main(string[] args)
     {
         var filePaths = new List<string>();
         for (int i = 1; i <= 6; i++)
         {
-            var path = Path.Combine(basePath, $"grafo_{i}.txt");
-            if (File.Exists(path))
-            {
-                filePaths.Add(path);
-            }
-            else
-            {
-                Console.WriteLine($"Warning: File not found and will be skipped: {path}");
-            }
+            string path = Path.Combine(basePath, $"grafo_W_{i}.txt");
+            if (File.Exists(path)) filePaths.Add(path);
         }
         
-        // --- PHASE 1: Run all analyses using Adjacency List ---
+        // --- Execução dos Estudos de Caso (Parte 2) ---
         Console.WriteLine(new string('#', 80));
-        Console.WriteLine("### PHASE 1: ADJACENCY LIST");
+        Console.WriteLine("### INICIANDO ESTUDOS DE CASO - PARTE 2");
         Console.WriteLine(new string('#', 80));
+        
         foreach (var filePath in filePaths)
         {
-            AnalyzeWithAdjacencyList(filePath);
+            RunDijkstraCaseStudies(filePath);
         }
 
-        // --- PHASE 2: Run all analyses using Adjacency Matrix ---
-        Console.WriteLine("\n\n" + new string('#', 80));
-        Console.WriteLine("### PHASE 2: ADJACENCY MATRIX");
-        Console.WriteLine(new string('#', 80));
-        foreach (var filePath in filePaths)
-        {
-            AnalyzeWithAdjacencyMatrix(filePath);
-        }
+        // --- Estudo de Caso da Rede de Colaboração ---
+        RunCollaborationNetworkStudy();
     }
 
-    public static void AnalyzeWithAdjacencyList(string filePath)
+    /// <summary>
+    /// Roda os estudos de caso 3.1 e 3.2 do PDF da Parte 2 
+    /// </summary>
+    public static void RunDijkstraCaseStudies(string filePath)
     {
-        Console.WriteLine($"\n{new string('=', 80)}\nANALYZING: {Path.GetFileName(filePath)}");
+        Console.WriteLine($"\n{new string('=', 80)}\nANALISANDO: {Path.GetFileName(filePath)}");
+        Graph graph;
         try
         {
-            GC.Collect();
-            var memoryBefore = GC.GetTotalMemory(true);
-            var graph = Graph.FromFile(filePath, v => new AdjacencyList(v));
-            var memoryAfter = GC.GetTotalMemory(true);
+            // Carrega o grafo (usando AdjacencyList por performance)
+            graph = Graph.FromFile(filePath, v => new AdjacencyList(v));
+
+            if (graph.HasNegativeWeights)
+            {
+                Console.WriteLine("[AVISO] O grafo contém pesos negativos. O algoritmo de Dijkstra será pulado. ");
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"\n[ERRO] Falha ao carregar o grafo {filePath}. Razão: {ex.Message}");
+            return;
+        }
+
+        // --- Estudo de Caso 3.1: Distância e Caminho Mínimo [cite: 94] ---
+        Console.WriteLine("\n[Estudo de Caso 3.1: Distâncias e Caminhos Mínimos]");
+        int startVertex = 10;
+        var verticesToFind = new[] { 20, 30, 40, 50, 60 };
+        
+        // Usamos a implementação com Heap por ser a mais rápida
+        var (distances, parents) = graph.Dijkstra(startVertex, useHeap: true); 
+        
+        Console.WriteLine($"| Vértice Inicial | Vértice Final | Distância | Caminho Mínimo (exemplos) |");
+        Console.WriteLine($"|:--- |:--- |:--- |:--- |");
+        foreach (var endVertex in verticesToFind)
+        {
+            if (endVertex > graph.VertexCount) continue;
             
-            RunCaseStudies(graph, "Adjacency List", memoryAfter - memoryBefore);
+            double dist = distances.GetValueOrDefault(endVertex, double.PositiveInfinity);
+            string distStr = dist == double.PositiveInfinity ? "Inalcançável" : $"{dist:F2}";
+            var path = ReconstructPath(startVertex, endVertex, parents);
+            string pathStr = path.Any() ? string.Join(" -> ", path.Take(5)) + (path.Count > 5 ? "..." : "") : "N/A";
+            
+            Console.WriteLine($"| {startVertex, -15} | {endVertex, -13} | {distStr, -9} | {pathStr,-25} |");
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"\n[ERROR] Failed to process file {filePath}. Reason: {ex.Message}");
-        }
+
+        // --- Estudo de Caso 3.2: Comparação de Tempo Dijkstra [cite: 95] ---
+        Console.WriteLine("\n[Estudo de Caso 3.2: Tempo de Execução Dijkstra (k=100)]");
+        int k = 100; // Número de execuções [cite: 96]
+        
+        string timeArray = TimeDijkstra(graph, useHeap: false, k);
+        string timeHeap = TimeDijkstra(graph, useHeap: true, k);
+
+        Console.WriteLine($"| Implementação | Tempo Médio (k={k}) |");
+        Console.WriteLine($"|:--- |:--- |");
+        Console.WriteLine($"| Dijkstra com Vetor (O(V^2)) | {timeArray, -18} |");
+        Console.WriteLine($"| Dijkstra com Heap (O((E+V)logV)) | {timeHeap, -18} |");
     }
 
-    public static void AnalyzeWithAdjacencyMatrix(string filePath)
+    /// <summary>
+    /// Roda o estudo de caso da rede de colaboração 
+    /// </summary>
+    private static void RunCollaborationNetworkStudy()
     {
-        Console.WriteLine($"\n{new string('=', 80)}\nANALYZING: {Path.GetFileName(filePath)}");
+        Console.WriteLine($"\n{new string('=', 80)}\nANALISANDO: Rede de Colaboração ");
+        string graphFile = Path.Combine(basePath, "collab_graph.txt"); // Arquivo de arestas
+        string namesFile = Path.Combine(basePath, "collab_names.txt"); // Arquivo de mapeamento ID,Nome
+
+        if (!File.Exists(graphFile) || !File.Exists(namesFile))
+        {
+            Console.WriteLine("[AVISO] Arquivos 'collab_graph.txt' ou 'collab_names.txt' não encontrados. Pulando estudo de caso.");
+            return;
+        }
+
         try
         {
-            GC.Collect();
-            var memoryBefore = GC.GetTotalMemory(true);
-            var graph = Graph.FromFile(filePath, v => new AdjacencyMatrix(v));
-            var memoryAfter = GC.GetTotalMemory(true);
+            var graph = Graph.FromFile(graphFile, v => new AdjacencyList(v));
+            graph.LoadVertexNames(namesFile);
+            
+            string startName = "Edsger W. Dijkstra";
+            var targetNames = new[] 
+            {
+                "Alan M. Turing", 
+                "J. B. Kruskal", 
+                "Jon M. Kleinberg", 
+                "Éva Tardos", 
+                "Daniel R. Figueiredo"
+            };
 
-            RunCaseStudies(graph, "Adjacency Matrix", memoryAfter - memoryBefore);
-        }
-        catch (OutOfMemoryException)
-        {
-            Console.WriteLine($"\n--- SKIPPING Adjacency Matrix for {Path.GetFileName(filePath)} ---");
-            Console.WriteLine("      [REASON] OutOfMemoryException: The graph is too large to be represented by an Adjacency Matrix.");
-            Console.WriteLine("      Continuing to the next file...");
+            int startId = graph.GetVertexId(startName);
+            var (distances, parents) = graph.Dijkstra(startId, useHeap: true);
+
+            Console.WriteLine($"\nResultados do Caminho Mínimo a partir de '{startName}':");
+            Console.WriteLine($"| Pesquisador Destino | Distância (Proximidade) | Caminho (exemplo) |");
+            Console.WriteLine($"|:--- |:--- |:--- |");
+
+            foreach (var targetName in targetNames)
+            {
+                int endId = graph.GetVertexId(targetName);
+                double dist = distances.GetValueOrDefault(endId, double.PositiveInfinity);
+                string distStr = dist == double.PositiveInfinity ? "Inalcançável" : $"{dist:F4}";
+                
+                var pathIds = ReconstructPath(startId, endId, parents);
+                var pathNames = pathIds.Select(id => graph.GetVertexName(id));
+                string pathStr = pathIds.Any() ? string.Join(" -> ", pathNames.Take(4)) + "..." : "N/A";
+
+                Console.WriteLine($"| {targetName,-20} | {distStr,-23} | {pathStr,-17} |");
+            }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"\n[ERROR] Failed to process file {filePath}. Reason: {ex.Message}");
+            Console.WriteLine($"\n[ERRO] Falha ao processar a rede de colaboração. Razão: {ex.Message}");
         }
     }
 
-    public static void RunCaseStudies(Graph graph, string representationType, long memoryBytes)
+    // --- Funções Auxiliares ---
+
+    private static string TimeDijkstra(Graph graph, bool useHeap, int k)
     {
-        Console.WriteLine($"\n--- Results for: {representationType} ---");
-        
-        Console.WriteLine($"[1] Memory Usage: {memoryBytes / (1024.0 * 1024.0):F3} MB");
-        
-        // Using the optimized internal methods for performance timing
-        Console.WriteLine("[2] BFS Average Time (100 runs): " + TimeSearchAlgorithm(graph, graph.BreadthFirstSearch, 100));
-        Console.WriteLine("[3] DFS Average Time (100 runs): " + TimeSearchAlgorithm(graph, graph.DepthFirstSearch, 100));
-
-        var verticesToTest = new[] { 10, 20, 30 };
-        var startVertices = new[] { 1, 2, 3 };
-        
-        Console.WriteLine("[4] Parent Vertices:");
-        foreach (var startNode in startVertices)
-        {
-            if (startNode > graph.VertexCount) continue;
-            var (parentsBfs, _) = graph.BreadthFirstSearch(startNode);
-            var (parentsDfs, _) = graph.DepthFirstSearch(startNode);
-            foreach (var targetNode in verticesToTest)
-            {
-                if (targetNode > graph.VertexCount) continue;
-                var bfsParent = parentsBfs.GetValueOrDefault(targetNode)?.ToString() ?? "N/A";
-                var dfsParent = parentsDfs.GetValueOrDefault(targetNode)?.ToString() ?? "N/A";
-                Console.WriteLine($"    - Start {startNode} -> Target {targetNode}: BFS Parent={bfsParent}, DFS Parent={dfsParent}");
-            }
-        }
-        
-        var pairsToTest = new[] { (10, 20), (10, 30), (20, 30) };
-        Console.WriteLine("[5] Distances between pairs:");
-        foreach (var pair in pairsToTest)
-        {
-            if (pair.Item1 > graph.VertexCount || pair.Item2 > graph.VertexCount) continue;
-            var distance = graph.GetDistance(pair.Item1, pair.Item2);
-            Console.WriteLine($"    - Distance({pair.Item1}, {pair.Item2}): {(distance == -1 ? "Unreachable" : distance)}");
-        }
-
-        Console.WriteLine("[6] Connected Components:");
-        var components = graph.GetConnectedComponents();
-        if (components.Count != 0)
-        {
-            Console.WriteLine($"    - Number of components: {components.Count}");
-            Console.WriteLine($"    - Largest component size: {components.First().Count}");
-            Console.WriteLine($"    - Smallest component size: {components.Last().Count}");
-        }
-        else
-        {
-            Console.WriteLine("    - No components found (empty graph).");
-        }
-        
-        Console.WriteLine("[7] Diameter:");
-        var stopwatch = Stopwatch.StartNew();
-        var approxDiameter = graph.GetApproximateDiameter();
-        stopwatch.Stop();
-        Console.WriteLine($"    - Approximate Diameter (2-BFS): {approxDiameter} (took {stopwatch.ElapsedMilliseconds} ms)");
-        
-        if (graph.VertexCount < 2000)
-        {
-            stopwatch.Restart();
-            var exactDiameter = graph.GetDiameter();
-            stopwatch.Stop();
-            Console.WriteLine($"    - Exact Diameter (N-BFS): {exactDiameter} (took {stopwatch.ElapsedMilliseconds} ms)");
-        }
-        else
-        {
-             Console.WriteLine($"    - Exact Diameter (N-BFS): Skipped (graph has {graph.VertexCount} vertices, exceeds threshold of 2000)");
-        }
-    }
-
-    private static string TimeSearchAlgorithm(Graph graph, Action<int, Dictionary<int, int?>, Dictionary<int, int>> searchFunc, int runs)
-    {
-        if (graph.VertexCount == 0) return "N/A (empty graph)";
-        
-        var parents = new Dictionary<int, int?>(graph.VertexCount);
-        var levels = new Dictionary<int, int>(graph.VertexCount);
+        if (graph.VertexCount == 0) return "N/A";
         
         var random = new Random();
         var totalTime = TimeSpan.Zero;
         var stopwatch = new Stopwatch();
 
-        for (var i = 0; i < runs; i++)
+        for (int i = 0; i < k; i++)
         {
-            var startVertex = random.Next(1, graph.VertexCount + 1);
+            int startVertex = random.Next(1, graph.VertexCount + 1);
             stopwatch.Restart();
-            searchFunc(startVertex, parents, levels);
+            graph.Dijkstra(startVertex, useHeap);
             stopwatch.Stop();
             totalTime += stopwatch.Elapsed;
         }
-        return $"{totalTime.TotalMilliseconds / runs:F4} ms";
+        return $"{(totalTime.TotalMilliseconds / k):F4} ms";
+    }
+
+    private static List<int> ReconstructPath(int start, int end, Dictionary<int, int?> parents)
+    {
+        var path = new List<int>();
+        int? current = end;
+        while (current.HasValue && current.Value != start)
+        {
+            path.Add(current.Value);
+            current = parents.GetValueOrDefault(current.Value, null);
+        }
+
+        if (current.HasValue && current.Value == start)
+        {
+            path.Add(start);
+            path.Reverse();
+            return path;
+        }
+        return new List<int>(); // Retorna caminho vazio se não houver
     }
 }

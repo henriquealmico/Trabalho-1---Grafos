@@ -1,14 +1,24 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
 using GraphLibrary.Representations;
 
-namespace GraphLib
+namespace GraphLibrary
 {
     public class Graph
     {
         private readonly IGraphRepresentation _representation;
         private List<int> _allDegreesCache;
+        
+        // Mapeamentos para o estudo de caso da rede de colaboração 
+        private readonly Dictionary<string, int> _vertexStringToInt = new();
+        private readonly Dictionary<int, string> _vertexIntToString = new();
 
         public int VertexCount => _representation.VertexCount;
         public int EdgeCount => _representation.EdgeCount;
+        public bool HasNegativeWeights { get; private set; } = false;
 
         public Graph(int vertexCount, Func<int, IGraphRepresentation> representationFactory)
         {
@@ -20,168 +30,218 @@ namespace GraphLib
 
         private void InvalidateDegreeCache() => _allDegreesCache = null;
 
-        public void AddEdge(int u, int v)
+        // Atualizado para aceitar pesos
+        public void AddEdge(int u, int v, double weight)
         {
             if (u < 1 || u > VertexCount || v < 1 || v > VertexCount)
                 throw new ArgumentOutOfRangeException($"Vértices devem estar no intervalo [1, {VertexCount}].");
             
-            _representation.AddEdge(u, v);
+            if (weight < 0)
+            {
+                HasNegativeWeights = true;
+            }
+            
+            _representation.AddEdge(u, v, weight);
             InvalidateDegreeCache();
         }
 
         public Dictionary<string, double> GetDegreeMetrics()
         {
+            // ... (código de GetDegreeMetrics não modificado, continua funcionando) ...
             if (_allDegreesCache == null)
             {
                 _allDegreesCache = new List<int>(VertexCount);
-                for (var i = 1; i <= VertexCount; i++) _allDegreesCache.Add(_representation.GetNeighbors(i).Count());
+                for (int i = 1; i <= VertexCount; i++) _allDegreesCache.Add(_representation.GetNeighbors(i).Count());
             }
             var degrees = _allDegreesCache;
-
-            if (degrees.Count == 0) return new Dictionary<string, double> { { "min_degree", 0 }, { "max_degree", 0 }, { "avg_degree", 0 }, { "median_degree", 0 } };
-            
+            if (!degrees.Any()) return new Dictionary<string, double> { { "min_degree", 0 }, { "max_degree", 0 }, { "avg_degree", 0 }, { "median_degree", 0 } };
             var sortedDegrees = degrees.OrderBy(d => d).ToList();
-            var median = (sortedDegrees.Count % 2 == 1)
-                ? sortedDegrees[sortedDegrees.Count / 2]
-                : (sortedDegrees[sortedDegrees.Count / 2 - 1] + sortedDegrees[sortedDegrees.Count / 2]) / 2.0;
-
+            double median = (sortedDegrees.Count % 2 == 1) ? sortedDegrees[sortedDegrees.Count / 2] : (sortedDegrees[sortedDegrees.Count / 2 - 1] + sortedDegrees[sortedDegrees.Count / 2]) / 2.0;
             return new Dictionary<string, double> { { "min_degree", degrees.Min() }, { "max_degree", degrees.Max() }, { "avg_degree", degrees.Average() }, { "median_degree", median } };
         }
 
-        public (Dictionary<int, int?> Parents, Dictionary<int, int> Levels) BreadthFirstSearch(int startVertex) {
-            var parents = new Dictionary<int, int?>(VertexCount);
-            var levels = new Dictionary<int, int>(VertexCount);
-            BreadthFirstSearch(startVertex, parents, levels);
-            return (parents, levels);
-        }
-
-        internal void BreadthFirstSearch(int startVertex, Dictionary<int, int?> parents, Dictionary<int, int> levels)
+        // --- Algoritmos de Caminho Mínimo (Dijkstra) ---
+        
+        public (Dictionary<int, double> Distances, Dictionary<int, int?> Parents) Dijkstra(int startVertex, bool useHeap)
         {
-            parents.Clear();
-            levels.Clear();
-            var queue = new Queue<int>();
-
-            for (var i = 1; i <= VertexCount; i++) levels[i] = -1;
-
-            levels[startVertex] = 0;
-            parents[startVertex] = null;
-            queue.Enqueue(startVertex);
-
-            while (queue.Count > 0)
+            if (HasNegativeWeights)
             {
-                var u = queue.Dequeue();
-                foreach (var v in _representation.GetNeighbors(u)) {
-                    if (levels[v] != -1) continue;
-                    levels[v] = levels[u] + 1;
-                    parents[v] = u;
-                    queue.Enqueue(v);
-                }
+                // Conforme solicitado, informa que não implementa com pesos negativos 
+                throw new InvalidOperationException("A biblioteca ainda não implementa caminhos mínimos com pesos negativos. O algoritmo de Dijkstra não pode ser executado.");
+            }
+            
+            if (useHeap)
+            {
+                return DijkstraWithHeap(startVertex); // Implementação O((E+V) log V) [cite: 90]
+            }
+            else
+            {
+                return DijkstraWithArray(startVertex); // Implementação O(V^2) [cite: 89]
             }
         }
 
-        public (Dictionary<int, int?> Parents, Dictionary<int, int> Levels) DepthFirstSearch(int startVertex)
+        /// <summary>
+        /// Implementação de Dijkstra usando um vetor para encontrar o próximo vértice (O(V^2)). [cite: 89]
+        /// </summary>
+        private (Dictionary<int, double> Distances, Dictionary<int, int?> Parents) DijkstraWithArray(int startVertex)
         {
+            var distances = new Dictionary<int, double>(VertexCount);
             var parents = new Dictionary<int, int?>(VertexCount);
-            var levels = new Dictionary<int, int>(VertexCount);
-            DepthFirstSearch(startVertex, parents, levels);
-            return (parents, levels);
-        }
-
-        internal void DepthFirstSearch(int startVertex, Dictionary<int, int?> parents, Dictionary<int, int> levels)
-        {
-            parents.Clear();
-            levels.Clear();
             var visited = new HashSet<int>();
-            var stack = new Stack<(int Vertex, int Level)>();
 
-            for (var i = 1; i <= VertexCount; i++) levels[i] = -1;
-
-            stack.Push((startVertex, 0));
-            visited.Add(startVertex);
-            parents[startVertex] = null;
-            levels[startVertex] = 0;
-
-            while (stack.Count > 0)
-            {
-                var (u, level) = stack.Pop();
-                foreach (var v in _representation.GetNeighbors(u)) {
-                    if (!visited.Add(v)) continue;
-                    parents[v] = u;
-                    levels[v] = level + 1;
-                    stack.Push((v, level + 1));
-                }
-            }
-        }
-
-        public int GetDistance(int u, int v)
-        {
-            var (_, levels) = BreadthFirstSearch(u);
-            return levels.GetValueOrDefault(v, -1);
-        }
-
-        public int GetDiameter()
-        {
-            if (VertexCount == 0) return 0;
-            var maxDist = 0;
-            var parents = new Dictionary<int, int?>(VertexCount);
-            var levels = new Dictionary<int, int>(VertexCount);
             for (int i = 1; i <= VertexCount; i++)
             {
-                BreadthFirstSearch(i, parents, levels);
-                int currentMax = 0;
-                foreach(var level in levels.Values) if(level > currentMax) currentMax = level;
-                if (currentMax > maxDist) maxDist = currentMax;
+                distances[i] = double.PositiveInfinity;
+                parents[i] = null;
             }
-            return maxDist;
-        }
+            distances[startVertex] = 0;
 
-        public int GetApproximateDiameter()
-        {
-            if (VertexCount == 0) return 0;
-            var random = new Random();
-            var s = random.Next(1, VertexCount + 1);
-            var (_, levelsFromS) = BreadthFirstSearch(s);
-            var u = levelsFromS.OrderByDescending(kvp => kvp.Value).First().Key;
-            var (_, levelsFromU) = BreadthFirstSearch(u);
-            return levelsFromU.Values.Max();
-        }
-
-        public List<List<int>> GetConnectedComponents()
-        {
-            var components = new List<List<int>>();
-            var visited = new HashSet<int>();
-            for (var i = 1; i <= VertexCount; i++) {
-                if (!visited.Add(i)) continue;
-                var currentComponent = new List<int>();
-                var queue = new Queue<int>();
-                queue.Enqueue(i);
-                while (queue.Count > 0)
+            for (int i = 0; i < VertexCount; i++)
+            {
+                // Encontra o vértice não visitado com a menor distância (operação O(V))
+                int u = -1;
+                double minDistance = double.PositiveInfinity;
+                foreach (var v in distances)
                 {
-                    var u = queue.Dequeue();
-                    currentComponent.Add(u);
-                    foreach (var v in _representation.GetNeighbors(u)) if (visited.Add(v)) queue.Enqueue(v);
+                    if (!visited.Contains(v.Key) && v.Value < minDistance)
+                    {
+                        minDistance = v.Value;
+                        u = v.Key;
+                    }
                 }
-                components.Add(currentComponent);
+
+                if (u == -1 || minDistance == double.PositiveInfinity)
+                    break; // Todos os vértices restantes são inalcançáveis
+
+                visited.Add(u);
+
+                // Relaxamento
+                foreach (var (neighbor, weight) in _representation.GetNeighbors(u))
+                {
+                    double newDist = distances[u] + weight;
+                    if (newDist < distances[neighbor])
+                    {
+                        distances[neighbor] = newDist;
+                        parents[neighbor] = u;
+                    }
+                }
             }
-            return components.OrderByDescending(c => c.Count).ToList();
+            return (distances, parents);
         }
+
+        /// <summary>
+        /// Implementação de Dijkstra usando uma Fila de Prioridade (Heap) (O((E+V) log V)). [cite: 90]
+        /// </summary>
+        private (Dictionary<int, double> Distances, Dictionary<int, int?> Parents) DijkstraWithHeap(int startVertex)
+        {
+            var distances = new Dictionary<int, double>(VertexCount);
+            var parents = new Dictionary<int, int?>(VertexCount);
+            var pq = new PriorityQueue<int, double>(); // Usa a PriorityQueue nativa do .NET
+            var visited = new HashSet<int>();
+
+            for (int i = 1; i <= VertexCount; i++)
+            {
+                distances[i] = double.PositiveInfinity;
+                parents[i] = null;
+            }
+            distances[startVertex] = 0;
+            pq.Enqueue(startVertex, 0);
+
+            while (pq.TryDequeue(out int u, out double priority))
+            {
+                // Se já visitamos, pulamos (essa é uma entrada "antiga" na fila)
+                if (!visited.Add(u))
+                    continue;
+
+                // Otimização: se a prioridade (distância) na fila for maior que a
+                // distância já conhecida, é uma entrada antiga e pode ser ignorada.
+                if (priority > distances[u])
+                    continue;
+
+                // Relaxamento
+                foreach (var (neighbor, weight) in _representation.GetNeighbors(u))
+                {
+                    if (visited.Contains(neighbor)) continue;
+
+                    double newDist = distances[u] + weight;
+                    if (newDist < distances[neighbor])
+                    {
+                        distances[neighbor] = newDist;
+                        parents[neighbor] = u;
+                        // Adicionamos o vizinho à fila. Não há "decrease-key",
+                        // então podemos adicionar múltiplas entradas para o mesmo vértice [cite: 91]
+                        pq.Enqueue(neighbor, newDist);
+                    }
+                }
+            }
+            return (distances, parents);
+        }
+
+        // --- Métodos de Mapeamento (Estudo de Caso 3) ---
+
+        /// <summary>
+        /// Carrega um arquivo de mapeamento (ex: "id,nome") para o estudo de caso da rede.
+        /// </summary>
+        public void LoadVertexNames(string filePath)
+        {
+            _vertexStringToInt.Clear();
+            _vertexIntToString.Clear();
+            foreach (var line in File.ReadLines(filePath))
+            {
+                var parts = line.Split(',');
+                if (parts.Length == 2 && int.TryParse(parts[0], out int id))
+                {
+                    string name = parts[1].Trim();
+                    _vertexStringToInt[name] = id;
+                    _vertexIntToString[id] = name;
+                }
+            }
+        }
+
+        public int GetVertexId(string name)
+        {
+            if (!_vertexStringToInt.ContainsKey(name))
+                throw new KeyNotFoundException($"O vértice com nome '{name}' não foi encontrado no mapeamento.");
+            return _vertexStringToInt[name];
+        }
+
+        public string GetVertexName(int id)
+        {
+            return _vertexIntToString.GetValueOrDefault(id, $"ID {id} desconhecido");
+        }
+
+        // --- Método de Fábrica (Atualizado) ---
 
         public static Graph FromFile(string filePath, Func<int, IGraphRepresentation> representationFactory)
         {
             var lines = File.ReadAllLines(filePath);
-            if (!int.TryParse(lines.FirstOrDefault(), out var vertexCount))
+            if (!int.TryParse(lines.FirstOrDefault(), out int vertexCount))
                 throw new InvalidDataException("A primeira linha deve conter o número de vértices.");
 
             var graph = new Graph(vertexCount, representationFactory);
+            
+            // Usar InvariantCulture para garantir que '.' seja lido como decimal [cite: 83, 85]
+            var culture = CultureInfo.InvariantCulture; 
+
             foreach (var line in lines.Skip(1))
             {
-                var parts = line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length == 2 && int.TryParse(parts[0], out var u) && int.TryParse(parts[1], out var v))
+                var parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                
+                // O formato agora tem 3 colunas 
+                if (parts.Length == 3 && 
+                    int.TryParse(parts[0], out int u) && 
+                    int.TryParse(parts[1], out int v) && 
+                    double.TryParse(parts[2], NumberStyles.Float, culture, out double weight))
                 {
-                    graph.AddEdge(u, v);
+                    graph.AddEdge(u, v, weight);
                 }
             }
             return graph;
         }
+
+        // Métodos da Parte 1 (BFS, DFS, Componentes, etc.) não são mais diretamente
+        // usados pelos novos estudos de caso, mas podem ser mantidos para retrocompatibilidade
+        // (embora precisassem de ajustes para ignorar os pesos).
+        // Para focar na Parte 2, eles foram omitidos deste arquivo.
     }
 }
