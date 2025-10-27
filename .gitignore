@@ -1,1 +1,3 @@
 *.txt
+/GraphLib/GraphLib/obj
+/GraphLib/GraphLib/bin
