@@ -1,41 +1,41 @@
 using System.Collections.Generic;
 
-namespace GraphLibrary.Representations
-{
-    public class AdjacencyMatrix : IGraphRepresentation
-    {
-        private readonly byte[,] _matrix;
+namespace GraphLibrary.Representations {
+    public class AdjacencyMatrix : IGraphRepresentation {
+        private readonly double[,] _matrix;
+        private const double NoEdge = double.PositiveInfinity;
 
         public int VertexCount { get; }
         public int EdgeCount { get; private set; }
 
-        public AdjacencyMatrix(int vertexCount)
-        {
+        public AdjacencyMatrix(int vertexCount) {
             VertexCount = vertexCount;
             EdgeCount = 0;
-            _matrix = new byte[vertexCount, vertexCount];
+            _matrix = new double[vertexCount, vertexCount];
+            for (var i = 0; i < vertexCount; i++) {
+                for (var j = 0; j < vertexCount; j++) {
+                    _matrix[i, j] = NoEdge;
+                }
+            }
         }
 
-        public void AddEdge(int u, int v)
-        {
+        public void AddEdge(int u, int v, double weight) {
             var uIdx = u - 1;
             var vIdx = v - 1;
 
-            if (_matrix[uIdx, vIdx] != 0) return;
-            _matrix[uIdx, vIdx] = 1;
-            _matrix[vIdx, uIdx] = 1;
-            EdgeCount++;
+            if (_matrix[uIdx, vIdx] == NoEdge) {
+                EdgeCount++;
+            }
+            _matrix[uIdx, vIdx] = weight;
+            _matrix[vIdx, uIdx] = weight;
         }
 
-        public IEnumerable<int> GetNeighbors(int v)
-        {
+        public IEnumerable<(int vertex, double weight)> GetNeighbors(int v) {
             var vIdx = v - 1;
-            for (var i = 0; i < VertexCount; i++)
-            {
-                if (_matrix[vIdx, i] == 1)
-                {
-                    yield return i + 1;
-                }
+            for (var i = 0; i < VertexCount; i++) {
+                var weight = _matrix[vIdx, i];
+                if (weight != NoEdge)
+                    yield return (i + 1, weight);
             }
         }
     }
