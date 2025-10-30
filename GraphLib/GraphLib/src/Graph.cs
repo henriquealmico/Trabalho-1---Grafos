@@ -175,11 +175,8 @@ namespace GraphLibrary {
             var distances = new Dictionary<int, double>(VertexCount);
             var parents = new Dictionary<int, int?>(VertexCount);
             
-            for (var i = 1; i <= VertexCount; i++) {
-                distances[i] = double.PositiveInfinity;
-                parents[i] = null;
-            }
             distances[startVertex] = 0;
+            parents[startVertex] = null;
             
             _dijkstraStrategy.Initialize(VertexCount);
             _dijkstraStrategy.AddVertex(startVertex, 0);
@@ -189,7 +186,12 @@ namespace GraphLibrary {
                 
                 foreach (var (neighbor, weight) in _representation.GetNeighbors(u)) {
                     var newDist = distU + weight;
-                    if (newDist < distances[neighbor]) {
+                    
+                    if (!distances.TryGetValue(neighbor, out var currentDist)) {
+                        distances[neighbor] = newDist;
+                        parents[neighbor] = u;
+                        _dijkstraStrategy.AddVertex(neighbor, newDist);
+                    } else if (newDist < currentDist) {
                         distances[neighbor] = newDist;
                         parents[neighbor] = u;
                         _dijkstraStrategy.AddVertex(neighbor, newDist);
