@@ -121,26 +121,26 @@ public class Program {
         PrintFileHeader(filePath, "AdjacencyList", "P2");
         
         try {
-            var graph = Graph.FromFileWeighted(filePath, v => new AdjacencyList(v));
+            var graph = Graph.FromFileWeighted(filePath, v => new AdjacencyList(v), new GraphLibrary.Algorithms.DijkstraHeapStrategy());
             
             if (graph.HasNegativeWeights) {
                 Console.WriteLine("[AVISO] Grafo com pesos negativos. Dijkstra não será executado.");
                 return;
             }
 
-            ExecuteDijkstraTests(graph);
+            ExecuteDijkstraTests(graph, filePath);
         }
         catch (Exception ex) {
             PrintError($"Falha ao carregar: {ex.Message}");
         }
     }
 
-    private static void ExecuteDijkstraTests(Graph graph) {
+    private static void ExecuteDijkstraTests(Graph graph, string filePath) {
         const int startVertex = 10;
         var targetVertices = new[] { 20, 30, 40, 50, 60 };
         
         Console.WriteLine("\n[Estudo 3.1: Distâncias e Caminhos Mínimos]");
-        var (distances, parents) = graph.Dijkstra(startVertex, useHeap: true);
+        var (distances, parents) = graph.Dijkstra(startVertex);
         
         Console.WriteLine("| Vértice Inicial | Vértice Final | Distância | Caminho Mínimo |");
         Console.WriteLine(new string('-', 70));
@@ -155,8 +155,8 @@ public class Program {
         }
 
         Console.WriteLine($"\n[Estudo 3.2: Tempo de Execução Dijkstra (k={DijkstraRunCount})]");
-        var timeArray = MeasureDijkstra(graph, useHeap: false, DijkstraRunCount);
-        var timeHeap = MeasureDijkstra(graph, useHeap: true, DijkstraRunCount);
+        var timeArray = MeasureDijkstraWithStrategy(filePath, new GraphLibrary.Algorithms.DijkstraArrayStrategy(), DijkstraRunCount);
+        var timeHeap = MeasureDijkstraWithStrategy(filePath, new GraphLibrary.Algorithms.DijkstraHeapStrategy(), DijkstraRunCount);
         
         Console.WriteLine("| Implementação | Tempo Médio |");
         Console.WriteLine(new string('-', 50));
@@ -173,13 +173,13 @@ public class Program {
             return;
         }
         try {
-            var graph = Graph.FromFileWeighted(graphFile, v => new AdjacencyList(v));
+            var graph = Graph.FromFileWeighted(graphFile, v => new AdjacencyList(v), new GraphLibrary.Algorithms.DijkstraHeapStrategy());
             graph.LoadVertexNames(namesFile);
             
             const string startName = "Edsger W. Dijkstra";
             var targetNames = new[] { "Alan M. Turing", "J. B. Kruskal", "Jon M. Kleinberg", "Éva Tardos", "Daniel R. Figueiredo" };
             var startId = graph.GetVertexId(startName);
-            var (distances, parents) = graph.Dijkstra(startId, useHeap: true);
+            var (distances, parents) = graph.Dijkstra(startId);
 
             Console.WriteLine($"\nResultados do Caminho Mínimo a partir de '{startName}':");
             Console.WriteLine($"| Pesquisador Destino | Distância (Proximidade) | Caminho (exemplo) |");
@@ -276,7 +276,8 @@ public class Program {
         return $"{avgMilliseconds:F4} ms";
     }
 
-    private static string MeasureDijkstra(Graph graph, bool useHeap, int runs) {
+    private static string MeasureDijkstraWithStrategy(string filePath, GraphLibrary.Algorithms.IDijkstraStrategy strategy, int runs) {
+        var graph = Graph.FromFileWeighted(filePath, v => new AdjacencyList(v), strategy);
         if (graph.VertexCount == 0) return "N/A";
         
         var random = new Random(42);
@@ -286,7 +287,7 @@ public class Program {
         for (var i = 0; i < runs; i++) {
             var startVertex = random.Next(1, graph.VertexCount + 1);
             stopwatch.Restart();
-            graph.Dijkstra(startVertex, useHeap);
+            graph.Dijkstra(startVertex);
             stopwatch.Stop();
             totalTicks += stopwatch.ElapsedTicks;
         }

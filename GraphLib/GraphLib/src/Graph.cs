@@ -1,9 +1,10 @@
 using System.Globalization;
 using GraphLibrary.Representations;
+using GraphLibrary.Algorithms;
 
 namespace GraphLibrary {
-    public class Graph {
         private readonly IGraphRepresentation _representation;
+        private readonly IDijkstraStrategy _dijkstraStrategy;
         private List<int> _allDegreesCache;
         
         private readonly Dictionary<string, int> _vertexStringToInt = new();
@@ -11,13 +12,14 @@ namespace GraphLibrary {
 
         public int VertexCount => _representation.VertexCount;
         public int EdgeCount => _representation.EdgeCount;
-        public bool HasNegativeWeights { get; private set; } = false;
+        public bool HasNegativeWeights { get; private set; }
 
-        public Graph(int vertexCount, Func<int, IGraphRepresentation> representationFactory) {
+        public Graph(int vertexCount, Func<int, IGraphRepresentation> representationFactory, IDijkstraStrategy dijkstraStrategy = null) {
             if (vertexCount <= 0)
                 throw new ArgumentException("O número de vértices deve ser positivo.", nameof(vertexCount));
             
             _representation = representationFactory(vertexCount);
+            _dijkstraStrategy = dijkstraStrategy ?? new DijkstraHeapStrategy();
         }
 
         private void InvalidateDegreeCache() => _allDegreesCache = null;
@@ -165,73 +167,35 @@ namespace GraphLibrary {
             return new Dictionary<string, double> { { "min_degree", degrees.Min() }, { "max_degree", degrees.Max() }, { "avg_degree", degrees.Average() }, { "median_degree", median } };
         }
 
-        public (Dictionary<int, double> Distances, Dictionary<int, int?> Parents) Dijkstra(int startVertex, bool useHeap) {
+        public (Dictionary<int, double> Distances, Dictionary<int, int?> Parents) Dijkstra(int startVertex) {
             if (HasNegativeWeights)
                 throw new InvalidOperationException("A biblioteca não pode executar Dijkstra em grafos com pesos negativos.");
-            return useHeap ? DijkstraWithHeap(startVertex) : DijkstraWithArray(startVertex);
-        }
-
-        private (Dictionary<int, double> Distances, Dictionary<int, int?> Parents) DijkstraWithArray(int startVertex) {
+            
             var distances = new Dictionary<int, double>(VertexCount);
             var parents = new Dictionary<int, int?>(VertexCount);
-            var visited = new HashSet<int>();
-
+            
             for (var i = 1; i <= VertexCount; i++) {
                 distances[i] = double.PositiveInfinity;
                 parents[i] = null;
             }
             distances[startVertex] = 0;
-
-            for (var i = 0; i < VertexCount; i++) {
-                var u = -1;
-                var minDistance = double.PositiveInfinity;
-                foreach (var v in distances) {
-                    if (!visited.Contains(v.Key) && v.Value < minDistance) {
-                        minDistance = v.Value;
-                        u = v.Key;
-                    }
-                }
-                if (u == -1 || minDistance == double.PositiveInfinity) break;
-                visited.Add(u);
-
-                foreach (var (neighbor, weight) in _representation.GetNeighbors(u)) {
-                    var newDist = distances[u] + weight;
-                    if (newDist < distances[neighbor]) {
-                        distances[neighbor] = newDist;
-                        parents[neighbor] = u;
-                    }
-                }
-            }
-            return (distances, parents);
-        }
-
-        private (Dictionary<int, double> Distances, Dictionary<int, int?> Parents) DijkstraWithHeap(int startVertex) {
-            var distances = new Dictionary<int, double>(VertexCount);
-            var parents = new Dictionary<int, int?>(VertexCount);
-            var pq = new PriorityQueue<int, double>();
-            var visited = new HashSet<int>();
-
-            for (var i = 1; i <= VertexCount; i++) {
-                distances[i] = double.PositiveInfinity;
-                parents[i] = null;
-            }
-            distances[startVertex] = 0;
-            pq.Enqueue(startVertex, 0);
-
-            while (pq.TryDequeue(out var u, out var priority)) {
-                if (!visited.Add(u)) continue;
-                if (priority > distances[u]) continue;
+            
+            _dijkstraStrategy.Initialize(VertexCount);
+            _dijkstraStrategy.AddVertex(startVertex, 0);
+            
+            while (_dijkstraStrategy.TryGetNext(out var u, out var currentDist)) {
+                if (currentDist > distances[u]) continue;
                 
                 foreach (var (neighbor, weight) in _representation.GetNeighbors(u)) {
-                    if (visited.Contains(neighbor)) continue;
                     var newDist = distances[u] + weight;
                     if (newDist < distances[neighbor]) {
                         distances[neighbor] = newDist;
                         parents[neighbor] = u;
-                        pq.Enqueue(neighbor, newDist);
+                        _dijkstraStrategy.AddVertex(neighbor, newDist);
                     }
                 }
             }
+            
             return (distances, parents);
         }
 
@@ -247,15 +211,16 @@ namespace GraphLibrary {
                 }
             }
         }
+        
         public int GetVertexId(string name) => _vertexStringToInt[name];
         public string GetVertexName(int id) => _vertexIntToString.GetValueOrDefault(id, $"ID {id}");
 
-        public static Graph FromFileUnweighted(string filePath, Func<int, IGraphRepresentation> representationFactory) {
+        public static Graph FromFileUnweighted(string filePath, Func<int, IGraphRepresentation> representationFactory, IDijkstraStrategy dijkstraStrategy = null) {
             var lines = File.ReadAllLines(filePath);
             if (!int.TryParse(lines.FirstOrDefault(), out var vertexCount))
                 throw new InvalidDataException("A primeira linha deve conter o número de vértices.");
 
-            var graph = new Graph(vertexCount, representationFactory);
+            var graph = new Graph(vertexCount, representationFactory, dijkstraStrategy);
             foreach (var line in lines.Skip(1)) {
                 var parts = line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length == 2 && int.TryParse(parts[0], out var u) && int.TryParse(parts[1], out var v)) {
@@ -265,12 +230,12 @@ namespace GraphLibrary {
             return graph;
         }
 
-        public static Graph FromFileWeighted(string filePath, Func<int, IGraphRepresentation> representationFactory) {
+        public static Graph FromFileWeighted(string filePath, Func<int, IGraphRepresentation> representationFactory, IDijkstraStrategy dijkstraStrategy = null) {
             var lines = File.ReadAllLines(filePath);
             if (!int.TryParse(lines.FirstOrDefault(), out var vertexCount))
                 throw new InvalidDataException("A primeira linha deve conter o número de vértices.");
 
-            var graph = new Graph(vertexCount, representationFactory);
+            var graph = new Graph(vertexCount, representationFactory, dijkstraStrategy);
             var culture = CultureInfo.InvariantCulture;
             foreach (var line in lines.Skip(1)) {
                 var parts = line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
