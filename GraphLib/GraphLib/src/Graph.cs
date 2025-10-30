@@ -3,6 +3,7 @@ using GraphLibrary.Representations;
 using GraphLibrary.Algorithms;
 
 namespace GraphLibrary {
+    public class Graph {
         private readonly IGraphRepresentation _representation;
         private readonly IDijkstraStrategy _dijkstraStrategy;
         private List<int> _allDegreesCache;

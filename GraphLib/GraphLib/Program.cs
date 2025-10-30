@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using GraphLibrary;
+using GraphLibrary.Algorithms;
 using GraphLibrary.Representations;
 
 public class Program {
@@ -311,14 +312,14 @@ public class Program {
     private static (Graph graph, long memoryUsed) LoadGraphWithMemoryTracking(
         string filePath,
         Func<int, IGraphRepresentation> representationFactory,
-        Func<string, Func<int, IGraphRepresentation>, Graph> loadFunction) {
+        Func<string, Func<int, IGraphRepresentation>, IDijkstraStrategy?, Graph> loadFunction) {
         
         GC.Collect();
         GC.WaitForPendingFinalizers();
         GC.Collect();
         
         var memoryBefore = GC.GetTotalMemory(true);
-        var graph = loadFunction(filePath, representationFactory);
+        var graph = loadFunction(filePath, representationFactory, null);
         var memoryAfter = GC.GetTotalMemory(true);
         
         return (graph, memoryAfter - memoryBefore);
