@@ -184,11 +184,11 @@ namespace GraphLibrary {
             _dijkstraStrategy.Initialize(VertexCount);
             _dijkstraStrategy.AddVertex(startVertex, 0);
             
-            while (_dijkstraStrategy.TryGetNext(out var u, out var currentDist)) {
-                if (currentDist > distances[u]) continue;
+            while (_dijkstraStrategy.TryGetNext(out var u, out var _)) {
+                var distU = distances[u];
                 
                 foreach (var (neighbor, weight) in _representation.GetNeighbors(u)) {
-                    var newDist = distances[u] + weight;
+                    var newDist = distU + weight;
                     if (newDist < distances[neighbor]) {
                         distances[neighbor] = newDist;
                         parents[neighbor] = u;

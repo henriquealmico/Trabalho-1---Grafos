@@ -5,7 +5,7 @@ namespace GraphLibrary.Algorithms {
 
         public void Initialize(int vertexCount) {
             _distances = new Dictionary<int, double>(vertexCount);
-            _visited = new HashSet<int>();
+            _visited = new HashSet<int>(vertexCount);
         }
 
         public void AddVertex(int vertex, double distance) {
@@ -17,13 +17,15 @@ namespace GraphLibrary.Algorithms {
             distance = double.PositiveInfinity;
 
             foreach (var kvp in _distances) {
-                if (!_visited.Contains(kvp.Key) && kvp.Value < distance) {
-                    distance = kvp.Value;
-                    vertex = kvp.Key;
+                var v = kvp.Key;
+                var d = kvp.Value;
+                if (!_visited.Contains(v) && d < distance) {
+                    distance = d;
+                    vertex = v;
                 }
             }
 
-            if (vertex == -1 || distance == double.PositiveInfinity) {
+            if (vertex == -1) {
                 return false;
             }
 

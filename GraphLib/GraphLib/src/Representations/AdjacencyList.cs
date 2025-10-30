@@ -26,10 +26,11 @@ namespace GraphLibrary.Representations {
         }
 
         public IEnumerable<(int vertex, double weight)> GetNeighbors(int v) {
-            if (!_adj.TryGetValue(v, out var value))
-                return [];
-            
-            return value.Select(kvp => (kvp.Key, kvp.Value));
+            if (_adj.TryGetValue(v, out var neighbors)) {
+                foreach (var kvp in neighbors) {
+                    yield return (kvp.Key, kvp.Value);
+                }
+            }
         }
     }
 }
