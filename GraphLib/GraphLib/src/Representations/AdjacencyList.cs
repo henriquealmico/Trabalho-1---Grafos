@@ -17,12 +17,15 @@ namespace GraphLibrary.Representations {
             }
         }
 
-        public void AddEdge(int u, int v, double weight) {
+        public void AddEdge(int u, int v, double weight, bool isDirected) {
             if (!_adj[u].ContainsKey(v)) {
                 EdgeCount++;
             }
             _adj[u][v] = weight;
-            _adj[v][u] = weight;
+
+            if (!isDirected) {
+                _adj[v][u] = weight;
+            }
         }
 
         public IEnumerable<(int vertex, double weight)> GetNeighbors(int v) {

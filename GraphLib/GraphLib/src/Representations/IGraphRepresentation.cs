@@ -5,7 +5,7 @@ namespace GraphLibrary.Representations {
         int VertexCount { get; }
         int EdgeCount { get; }
         
-        void AddEdge(int u, int v, double weight);
+        void AddEdge(int u, int v, double weight, bool isDirected);
 
         IEnumerable<(int vertex, double weight)> GetNeighbors(int v);
     }

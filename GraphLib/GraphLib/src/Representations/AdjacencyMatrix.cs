@@ -19,7 +19,7 @@ namespace GraphLibrary.Representations {
             }
         }
 
-        public void AddEdge(int u, int v, double weight) {
+        public void AddEdge(int u, int v, double weight, bool isDirected) {
             var uIdx = u - 1;
             var vIdx = v - 1;
 
@@ -27,7 +27,10 @@ namespace GraphLibrary.Representations {
                 EdgeCount++;
             }
             _matrix[uIdx, vIdx] = weight;
-            _matrix[vIdx, uIdx] = weight;
+
+            if (!isDirected) {
+                _matrix[vIdx, uIdx] = weight;
+            }
         }
 
         public IEnumerable<(int vertex, double weight)> GetNeighbors(int v) {
