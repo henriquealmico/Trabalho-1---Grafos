@@ -1,13 +1,17 @@
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using GraphLibrary;
 using GraphLibrary.Algorithms;
 using GraphLibrary.Representations;
 
 public class Program {
     private const string BasePath = @"C:\Users\halmi\Downloads\Trabalho 1 - Grafos\TestCases";
-    private const int MaxGraphFiles = 1;
+    private const int MaxGraphFiles = 15;
     private const int BfsRunCount = 100;
     private const int DijkstraRunCount = 100;
+    private const int BellmanFordRunCount = 10;
     
     private static class FeatureToggles {
         // PART 1 - Unweighted Graphs
@@ -19,9 +23,35 @@ public class Program {
         public const bool RunPart2 = true;
         public const bool RunPart2WeightedGraphs = true;
         public const bool RunPart2CollaborationNetwork = true;
+
+        // PART 3 - Directed Graph Studies
+        public const bool RunPart3 = true;
+        public const bool RunPart3CaseStudies = true;
     }
 
-    public static void Main() {
+    private static class GraphInputOptions {
+        public static bool IsDirected { get; private set; }
+
+        public static void Configure(string[]? args) {
+            IsDirected = false;
+            if (args is null) return;
+
+            foreach (var arg in args) {
+                if (arg.Equals("--directed", StringComparison.OrdinalIgnoreCase)) {
+                    IsDirected = true;
+                } else if (arg.Equals("--undirected", StringComparison.OrdinalIgnoreCase)) {
+                    IsDirected = false;
+                } else if (arg.StartsWith("--directed=", StringComparison.OrdinalIgnoreCase)) {
+                    if (bool.TryParse(arg.Split('=')[1], out var parsed)) {
+                        IsDirected = parsed;
+                    }
+                }
+            }
+        }
+    }
+
+    public static void Main(string[]? args) {
+        GraphInputOptions.Configure(args);
         PrintHeader();
         
         if (FeatureToggles.RunPart1)
@@ -29,6 +59,9 @@ public class Program {
 
         if (FeatureToggles.RunPart2)
             RunWeightedGraphs();
+
+        if (FeatureToggles.RunPart3)
+            RunCaseStudyGraphs();
         
         PrintFooter();
     }
@@ -76,9 +109,10 @@ public class Program {
         
         try {
             var (graph, memoryUsed) = LoadGraphWithMemoryTracking(
-                filePath, 
-                representationFactory, 
-                Graph.FromFileUnweighted
+                filePath,
+                representationFactory,
+                Graph.FromFileUnweighted,
+                GraphInputOptions.IsDirected
             );
             
             ExecutePart1Tests(graph, repType, memoryUsed);
@@ -122,7 +156,11 @@ public class Program {
         PrintFileHeader(filePath, "AdjacencyList", "P2");
         
         try {
-            var graph = Graph.FromFileWeighted(filePath, v => new AdjacencyList(v), new GraphLibrary.Algorithms.DijkstraHeapStrategy());
+            var graph = Graph.FromFileWeighted(
+                filePath,
+                v => new AdjacencyList(v),
+                new GraphLibrary.Algorithms.DijkstraHeapStrategy(),
+                GraphInputOptions.IsDirected);
             
             if (graph.HasNegativeWeights) {
                 Console.WriteLine("[AVISO] Grafo com pesos negativos. Dijkstra não será executado.");
@@ -174,7 +212,11 @@ public class Program {
             return;
         }
         try {
-            var graph = Graph.FromFileWeighted(graphFile, v => new AdjacencyList(v), new GraphLibrary.Algorithms.DijkstraHeapStrategy());
+            var graph = Graph.FromFileWeighted(
+                graphFile,
+                v => new AdjacencyList(v),
+                new GraphLibrary.Algorithms.DijkstraHeapStrategy(),
+                GraphInputOptions.IsDirected);
             graph.LoadVertexNames(namesFile);
             
             const string startName = "Edsger W. Dijkstra";
@@ -197,6 +239,132 @@ public class Program {
         catch (Exception ex) {
             Console.WriteLine($"\n[ERRO (P2)] Falha ao processar a rede de colaboração. Razão: {ex.Message}");
         }
+    }
+
+    // ========================= PART 3 CASE STUDIES =========================
+
+    private static void RunCaseStudyGraphs() {
+        if (!FeatureToggles.RunPart3CaseStudies)
+            return;
+
+        var files = GetGraphFiles("grafo_W_{0}.txt");
+        if (files.Count == 0) {
+            Console.WriteLine("[AVISO] Nenhum arquivo de estudo de caso (grafo_W_*) foi encontrado.");
+            return;
+        }
+
+        PrintSectionHeader("PARTE 3 - ESTUDOS DE CASO (Bellman-Ford)");
+        foreach (var file in files) {
+            RunCaseStudyForGraph(file);
+        }
+    }
+
+    private static void RunCaseStudyForGraph(string filePath) {
+        PrintFileHeader(filePath, "AdjacencyList", "P3");
+        const int targetVertex = 100;
+        var requestedSources = new[] { 10, 20, 30 };
+
+        try {
+            var graph = Graph.FromFileWeighted(
+                filePath,
+                v => new AdjacencyList(v),
+                new GraphLibrary.Algorithms.DijkstraHeapStrategy(),
+                GraphInputOptions.IsDirected);
+
+            if (targetVertex > graph.VertexCount) {
+                Console.WriteLine($"[AVISO] Vértice alvo {targetVertex} não existe neste grafo.");
+                return;
+            }
+
+            var sourceVertices = requestedSources.Where(v => v <= graph.VertexCount).ToArray();
+            if (sourceVertices.Length == 0) {
+                Console.WriteLine("[AVISO] Vértices 10, 20 e 30 não estão presentes neste grafo.");
+                return;
+            }
+
+            var bellmanResult = graph.BellmanFordToTarget(targetVertex);
+
+            PrintBellmanFordDistances(sourceVertices, targetVertex, bellmanResult);
+
+            var bellmanSeconds = MeasureBellmanFord(graph, targetVertex, BellmanFordRunCount);
+            PrintAverageTimeTable("Bellman-Ford", bellmanSeconds);
+
+            if (bellmanResult.HasNegativeCycle) {
+                Console.WriteLine("[ALERTA] Ciclo negativo detectado. Resultados podem não representar distâncias reais.");
+                return;
+            }
+
+            if (graph.HasNegativeWeights) {
+                Console.WriteLine("[AVISO] Pesos negativos detectados. Comparação com Dijkstra não será executada.");
+                return;
+            }
+
+            var reversedGraph = graph.CreateReversedCopy();
+            var dijkstraResult = reversedGraph.Dijkstra(targetVertex);
+            var dijkstraSeconds = MeasureDijkstraAtTarget(reversedGraph, targetVertex, BellmanFordRunCount);
+
+            PrintComparisonTables(
+                sourceVertices,
+                bellmanResult,
+                dijkstraResult,
+                bellmanSeconds,
+                dijkstraSeconds);
+        }
+        catch (Exception ex) {
+            PrintError($"Falha no estudo de caso: {ex.Message}");
+        }
+    }
+
+    private static void PrintBellmanFordDistances(IEnumerable<int> sources, int targetVertex, BellmanFordResult result) {
+        Console.WriteLine("\n[Estudo 3.1: Distâncias até o vértice 100 (Bellman-Ford)]");
+        Console.WriteLine("| Vértice Fonte | Vértice Alvo | Distância | Caminho |");
+        Console.WriteLine(new string('-', 80));
+
+        foreach (var source in sources) {
+            var dist = result.Distances.GetValueOrDefault(source, double.PositiveInfinity);
+            var distStr = FormatDistance(dist);
+            var path = ReconstructPathToTarget(source, targetVertex, result.Parents);
+            var pathStr = FormatPath(path);
+            Console.WriteLine($"| {source,-13} | {targetVertex,-12} | {distStr,-9} | {pathStr,-40} |");
+        }
+
+        Console.WriteLine(new string('-', 80));
+        Console.WriteLine($"Ciclo negativo detectado? {(result.HasNegativeCycle ? "SIM" : "NÃO")}");
+    }
+
+    private static void PrintAverageTimeTable(string algorithmName, double seconds) {
+        Console.WriteLine($"\n[Estudo 3.2: Tempo Médio ({BellmanFordRunCount} execuções)]");
+        Console.WriteLine("| Algoritmo | Tempo Médio (s) |");
+        Console.WriteLine(new string('-', 45));
+        Console.WriteLine($"| {algorithmName,-10} | {seconds:F6,-17} |");
+    }
+
+    private static void PrintComparisonTables(
+        IEnumerable<int> sources,
+        BellmanFordResult bellmanResult,
+        (Dictionary<int, double> Distances, Dictionary<int, int?> Parents) dijkstraResult,
+        double bellmanSeconds,
+        double dijkstraSeconds) {
+
+        Console.WriteLine("\n[Estudo 3.3: Comparação Bellman-Ford x Dijkstra]");
+        Console.WriteLine("| Vértice | Bellman-Ford | Dijkstra | Δ |");
+        Console.WriteLine(new string('-', 65));
+
+        foreach (var source in sources) {
+            var bellman = bellmanResult.Distances.GetValueOrDefault(source, double.PositiveInfinity);
+            var dijkstra = dijkstraResult.Distances.GetValueOrDefault(source, double.PositiveInfinity);
+            var bellmanStr = FormatDistance(bellman);
+            var dijkstraStr = FormatDistance(dijkstra);
+            var delta = (double.IsPositiveInfinity(bellman) || double.IsPositiveInfinity(dijkstra))
+                ? "N/A"
+                : $"{Math.Abs(bellman - dijkstra):F4}";
+            Console.WriteLine($"| {source,-7} | {bellmanStr,-13} | {dijkstraStr,-9} | {delta,-6} |");
+        }
+
+        Console.WriteLine("\n| Algoritmo | Tempo Médio (s) |");
+        Console.WriteLine(new string('-', 45));
+        Console.WriteLine($"| Bellman-Ford | {bellmanSeconds:F6,-17} |");
+        Console.WriteLine($"| Dijkstra (grafo invertido) | {dijkstraSeconds:F6,-17} |");
     }
 
     // ========================= TEST HELPERS =========================
@@ -278,7 +446,11 @@ public class Program {
     }
 
     private static string MeasureDijkstraWithStrategy(string filePath, GraphLibrary.Algorithms.IDijkstraStrategy strategy, int runs) {
-        var graph = Graph.FromFileWeighted(filePath, v => new AdjacencyList(v), strategy);
+        var graph = Graph.FromFileWeighted(
+            filePath,
+            v => new AdjacencyList(v),
+            strategy,
+            GraphInputOptions.IsDirected);
         if (graph.VertexCount == 0) return "N/A";
         
         var random = new Random(42);
@@ -297,6 +469,38 @@ public class Program {
         return $"{avgMilliseconds:F4} ms";
     }
 
+    private static double MeasureBellmanFord(Graph graph, int targetVertex, int runs) {
+        if (graph.VertexCount == 0) return 0;
+
+        var stopwatch = new Stopwatch();
+        var totalTicks = 0L;
+
+        for (var i = 0; i < runs; i++) {
+            stopwatch.Restart();
+            graph.BellmanFordToTarget(targetVertex);
+            stopwatch.Stop();
+            totalTicks += stopwatch.ElapsedTicks;
+        }
+
+        return (totalTicks / (double)Stopwatch.Frequency) / runs;
+    }
+
+    private static double MeasureDijkstraAtTarget(Graph graph, int targetVertex, int runs) {
+        if (graph.VertexCount == 0) return 0;
+
+        var stopwatch = new Stopwatch();
+        var totalTicks = 0L;
+
+        for (var i = 0; i < runs; i++) {
+            stopwatch.Restart();
+            graph.Dijkstra(targetVertex);
+            stopwatch.Stop();
+            totalTicks += stopwatch.ElapsedTicks;
+        }
+
+        return (totalTicks / (double)Stopwatch.Frequency) / runs;
+    }
+
     // ========================= UTILITY METHODS =========================
 
     private static List<string> GetGraphFiles(string pattern) {
@@ -312,14 +516,15 @@ public class Program {
     private static (Graph graph, long memoryUsed) LoadGraphWithMemoryTracking(
         string filePath,
         Func<int, IGraphRepresentation> representationFactory,
-        Func<string, Func<int, IGraphRepresentation>, IDijkstraStrategy?, Graph> loadFunction) {
+        Func<string, Func<int, IGraphRepresentation>, IDijkstraStrategy?, bool, Graph> loadFunction,
+        bool isDirected) {
         
         GC.Collect();
         GC.WaitForPendingFinalizers();
         GC.Collect();
         
         var memoryBefore = GC.GetTotalMemory(true);
-        var graph = loadFunction(filePath, representationFactory, null);
+        var graph = loadFunction(filePath, representationFactory, null, isDirected);
         var memoryAfter = GC.GetTotalMemory(true);
         
         return (graph, memoryAfter - memoryBefore);
@@ -344,6 +549,21 @@ public class Program {
         return path;
     }
 
+    private static List<int> ReconstructPathToTarget(int source, int target, Dictionary<int, int?> parents) {
+        if (source == target)
+            return new List<int> { source };
+
+        var reversedPath = ReconstructPath(target, source, parents);
+        if (reversedPath.Count == 0)
+            return [];
+
+        reversedPath.Reverse();
+        return reversedPath;
+    }
+
+    private static string FormatDistance(double distance) =>
+        double.IsPositiveInfinity(distance) ? "Inalcançável" : $"{distance:F4}";
+
     private static string FormatPath(List<int> path, int maxDisplay = 5) {
         if (path.Count == 0) return "N/A";
         
@@ -360,6 +580,7 @@ public class Program {
         Console.WriteLine("### GRAPH ANALYSIS TEST SUITE");
         Console.WriteLine($"### Part 1 (Unweighted): {(FeatureToggles.RunPart1 ? "ENABLED" : "DISABLED")}");
         Console.WriteLine($"### Part 2 (Weighted): {(FeatureToggles.RunPart2 ? "ENABLED" : "DISABLED")}");
+        Console.WriteLine($"### Directed Input: {(GraphInputOptions.IsDirected ? "YES" : "NO")}");
         Console.WriteLine(new string('#', 80));
     }
 

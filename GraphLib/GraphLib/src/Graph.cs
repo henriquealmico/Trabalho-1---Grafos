@@ -1,11 +1,15 @@
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using GraphLibrary.Representations;
 using GraphLibrary.Algorithms;
 
 namespace GraphLibrary {
     public class Graph {
         private readonly IGraphRepresentation _representation;
+        private readonly Func<int, IGraphRepresentation> _representationFactory;
         private readonly IDijkstraStrategy _dijkstraStrategy;
+        private readonly bool _isDirected;
         private List<int> _allDegreesCache;
         
         private readonly Dictionary<string, int> _vertexStringToInt = new();
@@ -14,29 +18,45 @@ namespace GraphLibrary {
         public int VertexCount => _representation.VertexCount;
         public int EdgeCount => _representation.EdgeCount;
         public bool HasNegativeWeights { get; private set; }
+        public bool IsDirected => _isDirected;
 
-        public Graph(int vertexCount, Func<int, IGraphRepresentation> representationFactory, IDijkstraStrategy dijkstraStrategy = null) {
+        public Graph(int vertexCount,
+                     Func<int, IGraphRepresentation> representationFactory,
+                     IDijkstraStrategy dijkstraStrategy = null,
+                     bool isDirected = false) {
             if (vertexCount <= 0)
                 throw new ArgumentException("O número de vértices deve ser positivo.", nameof(vertexCount));
             
-            _representation = representationFactory(vertexCount);
+            _representationFactory = representationFactory ?? throw new ArgumentNullException(nameof(representationFactory));
+            _representation = _representationFactory(vertexCount);
             _dijkstraStrategy = dijkstraStrategy ?? new DijkstraHeapStrategy();
+            _isDirected = isDirected;
         }
 
         private void InvalidateDegreeCache() => _allDegreesCache = null;
 
-        public void AddEdge(int u, int v, double weight) {
-            if (u < 1 || u > VertexCount || v < 1 || v > VertexCount)
+        private void ValidateVertexIndex(int vertex) {
+            if (vertex < 1 || vertex > VertexCount)
                 throw new ArgumentOutOfRangeException($"Vértices devem estar no intervalo [1, {VertexCount}].");
-            
+        }
+
+        public void AddEdge(int u, int v, double weight) {
+            ValidateVertexIndex(u);
+            ValidateVertexIndex(v);
+
             if (weight < 0) HasNegativeWeights = true;
             
-            _representation.AddEdge(u, v, weight);
+            _representation.AddEdge(u, v, weight, _isDirected);
             InvalidateDegreeCache();
         }
 
         public void AddEdge(int u, int v) {
             AddEdge(u, v, 1.0);
+        }
+
+        public IEnumerable<(int neighbor, double weight)> GetNeighbors(int vertex) {
+            ValidateVertexIndex(vertex);
+            return _representation.GetNeighbors(vertex);
         }
 
         public (Dictionary<int, int?> Parents, Dictionary<int, int> Levels) BreadthFirstSearch(int startVertex) {
@@ -202,6 +222,84 @@ namespace GraphLibrary {
             return (distances, parents);
         }
 
+        public Graph CreateReversedCopy(Func<int, IGraphRepresentation> representationFactory = null,
+                                        IDijkstraStrategy dijkstraStrategy = null) {
+            var factory = representationFactory ?? _representationFactory;
+            var reversed = new Graph(VertexCount, factory, dijkstraStrategy, _isDirected);
+
+            for (var u = 1; u <= VertexCount; u++) {
+                foreach (var (neighbor, weight) in _representation.GetNeighbors(u)) {
+                    reversed.AddEdge(neighbor, u, weight);
+                }
+            }
+
+            reversed.HasNegativeWeights = HasNegativeWeights;
+            return reversed;
+        }
+
+        public BellmanFordResult BellmanFordFromSource(int startVertex) {
+            ValidateVertexIndex(startVertex);
+            return RunBellmanFord(startVertex);
+        }
+
+        public BellmanFordResult BellmanFordToTarget(int targetVertex) {
+            ValidateVertexIndex(targetVertex);
+            var reversed = CreateReversedCopy();
+            var result = reversed.RunBellmanFord(targetVertex);
+            return result with { Mode = BellmanFordResultMode.ToTarget };
+        }
+
+        private BellmanFordResult RunBellmanFord(int startVertex) {
+            var distances = new Dictionary<int, double>(VertexCount);
+            var parents = new Dictionary<int, int?>(VertexCount);
+
+            for (var i = 1; i <= VertexCount; i++) {
+                distances[i] = double.PositiveInfinity;
+            }
+
+            distances[startVertex] = 0;
+            parents[startVertex] = null;
+
+            var queue = new Queue<int>();
+            var inQueue = new bool[VertexCount + 1];
+            var enqueueCounts = new int[VertexCount + 1];
+
+            queue.Enqueue(startVertex);
+            inQueue[startVertex] = true;
+            enqueueCounts[startVertex] = 1;
+
+            var hasNegativeCycle = false;
+
+            while (queue.Count > 0 && !hasNegativeCycle) {
+                var u = queue.Dequeue();
+                inQueue[u] = false;
+
+                var distU = distances[u];
+                if (double.IsPositiveInfinity(distU))
+                    continue;
+
+                foreach (var (neighbor, weight) in _representation.GetNeighbors(u)) {
+                    var newDist = distU + weight;
+                    if (newDist < distances[neighbor]) {
+                        distances[neighbor] = newDist;
+                        parents[neighbor] = u;
+
+                        if (!inQueue[neighbor]) {
+                            queue.Enqueue(neighbor);
+                            inQueue[neighbor] = true;
+                            enqueueCounts[neighbor]++;
+                            if (enqueueCounts[neighbor] > VertexCount) {
+                                hasNegativeCycle = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return new BellmanFordResult(distances, parents, hasNegativeCycle, startVertex, BellmanFordResultMode.FromSource);
+        }
+
         public void LoadVertexNames(string filePath) {
             _vertexStringToInt.Clear();
             _vertexIntToString.Clear();
@@ -218,12 +316,15 @@ namespace GraphLibrary {
         public int GetVertexId(string name) => _vertexStringToInt[name];
         public string GetVertexName(int id) => _vertexIntToString.GetValueOrDefault(id, $"ID {id}");
 
-        public static Graph FromFileUnweighted(string filePath, Func<int, IGraphRepresentation> representationFactory, IDijkstraStrategy dijkstraStrategy = null) {
+        public static Graph FromFileUnweighted(string filePath,
+                                               Func<int, IGraphRepresentation> representationFactory,
+                                               IDijkstraStrategy dijkstraStrategy = null,
+                                               bool isDirected = false) {
             var lines = File.ReadAllLines(filePath);
             if (!int.TryParse(lines.FirstOrDefault(), out var vertexCount))
                 throw new InvalidDataException("A primeira linha deve conter o número de vértices.");
 
-            var graph = new Graph(vertexCount, representationFactory, dijkstraStrategy);
+            var graph = new Graph(vertexCount, representationFactory, dijkstraStrategy, isDirected);
             foreach (var line in lines.Skip(1)) {
                 var parts = line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length == 2 && int.TryParse(parts[0], out var u) && int.TryParse(parts[1], out var v)) {
@@ -233,12 +334,15 @@ namespace GraphLibrary {
             return graph;
         }
 
-        public static Graph FromFileWeighted(string filePath, Func<int, IGraphRepresentation> representationFactory, IDijkstraStrategy dijkstraStrategy = null) {
+        public static Graph FromFileWeighted(string filePath,
+                                             Func<int, IGraphRepresentation> representationFactory,
+                                             IDijkstraStrategy dijkstraStrategy = null,
+                                             bool isDirected = false) {
             var lines = File.ReadAllLines(filePath);
             if (!int.TryParse(lines.FirstOrDefault(), out var vertexCount))
                 throw new InvalidDataException("A primeira linha deve conter o número de vértices.");
 
-            var graph = new Graph(vertexCount, representationFactory, dijkstraStrategy);
+            var graph = new Graph(vertexCount, representationFactory, dijkstraStrategy, isDirected);
             var culture = CultureInfo.InvariantCulture;
             foreach (var line in lines.Skip(1)) {
                 var parts = line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
