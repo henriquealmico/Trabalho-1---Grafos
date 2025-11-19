@@ -20,9 +20,9 @@ public class Program {
         public const bool RunPart1AdjacencyMatrix = false;
         
         // PART 2 - Weighted Graphs
-        public const bool RunPart2 = true;
-        public const bool RunPart2WeightedGraphs = true;
-        public const bool RunPart2CollaborationNetwork = true;
+        public const bool RunPart2 = false;
+        public const bool RunPart2WeightedGraphs = false;
+        public const bool RunPart2CollaborationNetwork = false;
 
         // PART 3 - Directed Graph Studies
         public const bool RunPart3 = true;

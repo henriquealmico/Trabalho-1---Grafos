@@ -250,8 +250,10 @@ namespace GraphLibrary {
         }
 
         private BellmanFordResult RunBellmanFord(int startVertex) {
-            var distances = new Dictionary<int, double>(VertexCount);
-            var parents = new Dictionary<int, int?>(VertexCount);
+            var distances = new double[VertexCount + 1];
+            var parents = new int?[VertexCount + 1];
+            var inQueue = new bool[VertexCount + 1];
+            var enqueueCounts = new int[VertexCount + 1];
 
             for (var i = 1; i <= VertexCount; i++) {
                 distances[i] = double.PositiveInfinity;
@@ -260,44 +262,72 @@ namespace GraphLibrary {
             distances[startVertex] = 0;
             parents[startVertex] = null;
 
-            var queue = new Queue<int>();
-            var inQueue = new bool[VertexCount + 1];
-            var enqueueCounts = new int[VertexCount + 1];
-
-            queue.Enqueue(startVertex);
+            var queue = new LinkedList<int>();
+            queue.AddLast(startVertex);
             inQueue[startVertex] = true;
             enqueueCounts[startVertex] = 1;
 
             var hasNegativeCycle = false;
+            var updateCount = 0;
+            var lastPassUpdates = 0;
 
             while (queue.Count > 0 && !hasNegativeCycle) {
-                var u = queue.Dequeue();
+                var u = queue.First.Value;
+                queue.RemoveFirst();
                 inQueue[u] = false;
 
                 var distU = distances[u];
                 if (double.IsPositiveInfinity(distU))
                     continue;
 
+                var madeUpdate = false;
                 foreach (var (neighbor, weight) in _representation.GetNeighbors(u)) {
                     var newDist = distU + weight;
                     if (newDist < distances[neighbor]) {
                         distances[neighbor] = newDist;
                         parents[neighbor] = u;
+                        madeUpdate = true;
+                        updateCount++;
 
                         if (!inQueue[neighbor]) {
-                            queue.Enqueue(neighbor);
-                            inQueue[neighbor] = true;
                             enqueueCounts[neighbor]++;
                             if (enqueueCounts[neighbor] > VertexCount) {
                                 hasNegativeCycle = true;
                                 break;
                             }
+
+                            if (queue.Count > 0 && newDist < distances[queue.First.Value]) {
+                                queue.AddFirst(neighbor);
+                            }
+                            else {
+                                queue.AddLast(neighbor);
+                            }
+                            inQueue[neighbor] = true;
                         }
                     }
                 }
+
+                if (!madeUpdate) {
+                    lastPassUpdates++;
+                    if (lastPassUpdates > VertexCount && queue.Count == 0) {
+                        break;
+                    }
+                } else {
+                    lastPassUpdates = 0;
+                }
             }
 
-            return new BellmanFordResult(distances, parents, hasNegativeCycle, startVertex, BellmanFordResultMode.FromSource);
+            var distanceDict = new Dictionary<int, double>(VertexCount);
+            var parentDict = new Dictionary<int, int?>(VertexCount);
+
+            for (var i = 1; i <= VertexCount; i++) {
+                distanceDict[i] = distances[i];
+                if (parents[i].HasValue || i == startVertex) {
+                    parentDict[i] = parents[i];
+                }
+            }
+
+            return new BellmanFordResult(distanceDict, parentDict, hasNegativeCycle, startVertex, BellmanFordResultMode.FromSource);
         }
 
         public void LoadVertexNames(string filePath) {
